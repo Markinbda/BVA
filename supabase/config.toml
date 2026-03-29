@@ -1,0 +1,4 @@
+project_id = "gclwagyvvmawpmvggixc"
+
+[functions.wp-import]
+verify_jwt = false

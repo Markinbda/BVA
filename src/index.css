@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 215 65% 18%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 65% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 65% 18%;
+
+    --primary: 215 65% 23%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 30% 93%;
+    --secondary-foreground: 215 65% 18%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 330 100% 80%;
+    --accent-foreground: 215 65% 15%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 25% 88%;
+    --input: 215 25% 88%;
+    --ring: 330 100% 80%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 215 65% 18%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 330 100% 80%;
+    --sidebar-primary-foreground: 215 65% 15%;
+    --sidebar-accent: 215 60% 28%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 215 50% 30%;
+    --sidebar-ring: 330 100% 80%;
+  }
+
+  .dark {
+    --background: 215 65% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 60% 12%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 60% 12%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 330 100% 80%;
+    --primary-foreground: 215 65% 15%;
+
+    --secondary: 215 50% 20%;
+    --secondary-foreground: 210 20% 95%;
+
+    --muted: 215 40% 18%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 330 100% 80%;
+    --accent-foreground: 215 65% 15%;
+
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 215 40% 22%;
+    --input: 215 40% 22%;
+    --ring: 330 100% 80%;
+
+    --sidebar-background: 215 65% 8%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 330 100% 80%;
+    --sidebar-primary-foreground: 215 65% 15%;
+    --sidebar-accent: 215 50% 18%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 215 40% 18%;
+    --sidebar-ring: 330 100% 80%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Teko', sans-serif;
+  }
+}
