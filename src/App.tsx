@@ -38,6 +38,33 @@ import AdminImport from "./pages/admin/AdminImport";
 import AdminLeagues from "./pages/admin/AdminLeagues";
 import AdminLeagueWeek from "./pages/admin/AdminLeagueWeek";
 import LeagueStandings from "./pages/LeagueStandings";
+// About sub-pages
+import Mission from "./pages/about/Mission";
+import Executives from "./pages/about/Executives";
+import GoverningBodies from "./pages/about/GoverningBodies";
+import AnnualReports from "./pages/about/AnnualReports";
+import AntiDoping from "./pages/about/AntiDoping";
+// Bursary sub-pages
+import AdoptAnAthlete from "./pages/bursary/AdoptAnAthlete";
+import YouthBursaries from "./pages/bursary/YouthBursaries";
+// Programs sub-pages
+import CoachingProgram from "./pages/programs/CoachingProgram";
+import RefereeProgram from "./pages/programs/RefereeProgram";
+// Leagues sub-pages
+import WinterLeague from "./pages/leagues/WinterLeague";
+import SpringLeague from "./pages/leagues/SpringLeague";
+import BeachTournaments from "./pages/leagues/BeachTournaments";
+import BermudaOpen from "./pages/leagues/BermudaOpen";
+import CorporateTournament from "./pages/leagues/CorporateTournament";
+import NatWestIslandGames from "./pages/leagues/NatWestIslandGames";
+import LeagueRules from "./pages/leagues/LeagueRules";
+// Gallery sub-pages
+import History from "./pages/gallery/History";
+import Videos from "./pages/gallery/Videos";
+import SocialMedia from "./pages/gallery/SocialMedia";
+// Registration sub-pages
+import WinterLeagueReg from "./pages/registration/WinterLeagueReg";
+import BeachRegistration from "./pages/registration/BeachRegistration";
 
 const queryClient = new QueryClient();
 
@@ -84,6 +111,33 @@ const App = () => (
             <Route path="/admin/leagues" element={<AdminRoute><AdminLeagues /></AdminRoute>} />
             <Route path="/admin/leagues/:seasonId/week/:weekNum" element={<AdminRoute><AdminLeagueWeek /></AdminRoute>} />
 
+            {/* About sub-pages */}
+            <Route path="/about/mission" element={<Mission />} />
+            <Route path="/about/executives" element={<Executives />} />
+            <Route path="/about/governing-bodies" element={<GoverningBodies />} />
+            <Route path="/about/annual-reports" element={<AnnualReports />} />
+            <Route path="/about/anti-doping" element={<AntiDoping />} />
+            {/* Bursary sub-pages */}
+            <Route path="/bursary/adopt-an-athlete" element={<AdoptAnAthlete />} />
+            <Route path="/bursary/youth-bursaries" element={<YouthBursaries />} />
+            {/* Programs sub-pages */}
+            <Route path="/programs/coaching" element={<CoachingProgram />} />
+            <Route path="/programs/referee" element={<RefereeProgram />} />
+            {/* Leagues sub-pages */}
+            <Route path="/leagues/winter" element={<WinterLeague />} />
+            <Route path="/leagues/spring" element={<SpringLeague />} />
+            <Route path="/leagues/beach-tournaments" element={<BeachTournaments />} />
+            <Route path="/leagues/bermuda-open" element={<BermudaOpen />} />
+            <Route path="/leagues/corporate" element={<CorporateTournament />} />
+            <Route path="/leagues/island-games" element={<NatWestIslandGames />} />
+            <Route path="/leagues/rules" element={<LeagueRules />} />
+            {/* Gallery sub-pages */}
+            <Route path="/gallery/history" element={<History />} />
+            <Route path="/gallery/videos" element={<Videos />} />
+            <Route path="/gallery/social" element={<SocialMedia />} />
+            {/* Registration sub-pages */}
+            <Route path="/registration/winter" element={<WinterLeagueReg />} />
+            <Route path="/registration/beach" element={<BeachRegistration />} />
             {/* Public league standings */}
             <Route path="/leagues/standings/:seasonId" element={<LeagueStandings />} />
 
