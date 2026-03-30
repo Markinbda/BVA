@@ -8,8 +8,30 @@ const navItems = [
   { label: "Home", path: "/" },
   { label: "News", path: "/news" },
   { label: "Events", path: "/events" },
-  { label: "Registration", path: "/registration" },
-  { label: "Leagues & Tournaments", path: "/leagues" },
+  {
+    label: "Registration",
+    path: "/registration",
+    children: [
+      { label: "Winter League Registration", path: "/registration" },
+      { label: "Beach Registration", path: "/registration" },
+      { label: "Indoor Camps", path: "/programs/youth-camps" },
+      { label: "Financial Aid", path: "/bursary" },
+    ],
+  },
+  {
+    label: "Leagues & Tournaments",
+    path: "/leagues",
+    children: [
+      { label: "Winter League", path: "/leagues" },
+      { label: "Spring League", path: "/leagues" },
+      { label: "Summer Beach League", path: "/summer-league" },
+      { label: "Beach Tournaments", path: "/leagues" },
+      { label: "Bermuda Open", path: "/leagues" },
+      { label: "Corporate Tournament", path: "/leagues" },
+      { label: "NatWest Island Games", path: "/leagues" },
+      { label: "BVA League Rules", path: "/leagues" },
+    ],
+  },
   {
     label: "Programs",
     path: "/programs",
@@ -21,41 +43,77 @@ const navItems = [
       { label: "Men's National Team", path: "/programs/senior/mens" },
       { label: "Women's National Team", path: "/programs/senior/womens" },
       { label: "Youth Camps", path: "/programs/youth-camps" },
+      { label: "Coaching Program", path: "/programs" },
+      { label: "Referee Program", path: "/programs" },
     ],
   },
-  { label: "Bursary", path: "/bursary" },
+  {
+    label: "Bursary",
+    path: "/bursary",
+    children: [
+      { label: "Financial Aid", path: "/bursary" },
+      { label: "Adopt-an-Athlete Program", path: "/bursary" },
+      { label: "Youth Bursaries", path: "/bursary" },
+    ],
+  },
   { label: "Membership", path: "/membership" },
-  { label: "Gallery", path: "/gallery" },
-  { label: "About Us", path: "/about" },
+  {
+    label: "Gallery",
+    path: "/gallery",
+    children: [
+      { label: "Photos", path: "/gallery" },
+      { label: "Videos", path: "/gallery" },
+      { label: "History", path: "/gallery" },
+      { label: "Social Media", path: "/gallery" },
+    ],
+  },
+  {
+    label: "About Us",
+    path: "/about",
+    children: [
+      { label: "Mission", path: "/about" },
+      { label: "Executives", path: "/about" },
+      { label: "Governing Bodies", path: "/about" },
+      { label: "Annual Reports", path: "/about" },
+      { label: "Anti-Doping", path: "/about" },
+    ],
+  },
 ];
 
 const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [mobileSubmenuOpen, setMobileSubmenuOpen] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [openMobileSubmenu, setOpenMobileSubmenu] = useState<string | null>(null);
   const location = useLocation();
-  const dropdownRef = useRef<HTMLLIElement>(null);
+  const navRef = useRef<HTMLUListElement>(null);
 
-  // Close dropdown on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
+      if (navRef.current && !navRef.current.contains(e.target as Node)) {
+        setOpenDropdown(null);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setMobileOpen(false);
-    setMobileSubmenuOpen(false);
-    setDropdownOpen(false);
+    setOpenMobileSubmenu(null);
+    setOpenDropdown(null);
   }, [location.pathname]);
 
   const isActive = (path: string) => location.pathname === path;
-  const isProgramsActive = location.pathname.startsWith("/programs");
+  const isParentActive = (item: typeof navItems[0]) =>
+    item.children
+      ? location.pathname === item.path || item.children.some((c) => location.pathname === c.path)
+      : location.pathname === item.path;
+
+  const toggleDropdown = (path: string) =>
+    setOpenDropdown((prev) => (prev === path ? null : path));
+
+  const toggleMobileSubmenu = (path: string) =>
+    setOpenMobileSubmenu((prev) => (prev === path ? null : path));
 
   return (
     <header className="sticky top-0 z-50 bg-primary shadow-lg">
@@ -73,31 +131,33 @@ const Navbar = () => {
         </Link>
 
         {/* Desktop nav */}
-        <ul className="hidden items-center gap-1 lg:flex">
+        <ul ref={navRef} className="hidden items-center gap-1 lg:flex">
           {navItems.map((item) =>
             item.children ? (
-              <li key={item.path} ref={dropdownRef} className="relative">
+              <li key={item.path} className="relative">
                 <button
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  onClick={() => toggleDropdown(item.path)}
                   className={`flex items-center gap-1 rounded-md px-3 py-2 font-sans text-sm font-medium transition-colors hover:bg-accent/20 hover:text-accent ${
-                    isProgramsActive ? "bg-accent/20 text-accent" : "text-primary-foreground/80"
+                    isParentActive(item) ? "bg-accent/20 text-accent" : "text-primary-foreground/80"
                   }`}
                 >
                   {item.label}
-                  <ChevronDown className={`h-3 w-3 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown
+                    className={`h-3 w-3 transition-transform ${openDropdown === item.path ? "rotate-180" : ""}`}
+                  />
                 </button>
-                {dropdownOpen && (
+                {openDropdown === item.path && (
                   <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border bg-popover p-2 shadow-lg">
                     <Link
                       to={item.path}
                       className="block rounded-md px-3 py-2 text-sm font-medium text-popover-foreground transition-colors hover:bg-accent/20 hover:text-accent"
                     >
-                      All Programs
+                      All {item.label}
                     </Link>
                     <div className="my-1 h-px bg-border" />
                     {item.children.map((child) => (
                       <Link
-                        key={child.path}
+                        key={child.label}
                         to={child.path}
                         className={`block rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/20 hover:text-accent ${
                           isActive(child.path) ? "bg-accent/20 text-accent font-medium" : "text-popover-foreground"
@@ -144,26 +204,28 @@ const Navbar = () => {
               item.children ? (
                 <li key={item.path}>
                   <button
-                    onClick={() => setMobileSubmenuOpen(!mobileSubmenuOpen)}
+                    onClick={() => toggleMobileSubmenu(item.path)}
                     className={`flex w-full items-center justify-between rounded-md px-4 py-3 font-sans text-sm font-medium transition-colors hover:bg-accent/20 ${
-                      isProgramsActive ? "bg-accent/20 text-accent" : "text-primary-foreground/80"
+                      isParentActive(item) ? "bg-accent/20 text-accent" : "text-primary-foreground/80"
                     }`}
                   >
                     {item.label}
-                    <ChevronDown className={`h-4 w-4 transition-transform ${mobileSubmenuOpen ? "rotate-180" : ""}`} />
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${openMobileSubmenu === item.path ? "rotate-180" : ""}`}
+                    />
                   </button>
-                  {mobileSubmenuOpen && (
+                  {openMobileSubmenu === item.path && (
                     <ul className="ml-4 mt-1 space-y-1 border-l-2 border-accent/30 pl-4">
                       <li>
                         <Link
                           to={item.path}
                           className="block rounded-md px-4 py-2 text-sm text-primary-foreground/80 hover:bg-accent/20 hover:text-accent"
                         >
-                          All Programs
+                          All {item.label}
                         </Link>
                       </li>
                       {item.children.map((child) => (
-                        <li key={child.path}>
+                        <li key={child.label}>
                           <Link
                             to={child.path}
                             className={`block rounded-md px-4 py-2 text-sm transition-colors hover:bg-accent/20 hover:text-accent ${
