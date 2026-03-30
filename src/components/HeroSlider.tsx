@@ -7,8 +7,8 @@ import heroBeachTournament from "@/assets/hero-beach-tournament.jpg";
 import heroGrassIndoor from "@/assets/hero-grass-indoor.jpg";
 import heroNationalBeach from "@/assets/hero-national-beach.jpg";
 import heroJuniorWomen from "@/assets/hero-junior-women.jpg";
-import heroMensNational from "@/assets/hero-mens-national.jpg";
-import heroWomensNational from "@/assets/hero-womens-national.jpg";
+import heroMensNational from "@/assets/hero-mens-national.png";
+import heroWomensNational from "@/assets/hero-womens-national.jpeg";
 
 const slides = [
   {
