@@ -1,8 +1,15 @@
 import Layout from "@/components/Layout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { User } from "lucide-react";
 
-const board = [
+type Member = {
+  name: string;
+  role: string;
+  photo?: string;
+};
+
+const board: Member[] = [
   { name: "Juanita Blee", role: "Chairman & Director" },
   { name: "Lisa LeBlanc", role: "Co-President & Director" },
   { name: "Brandon Sousa", role: "Co-President & Director" },
@@ -10,7 +17,7 @@ const board = [
   { name: "Lori Gazzard", role: "Director" },
 ];
 
-const executive = [
+const executive: Member[] = [
   { name: "Lisa LeBlanc", role: "Co-President" },
   { name: "Brandon Sousa", role: "Co-President" },
   { name: "Megan Woods", role: "Secretary" },
@@ -26,7 +33,7 @@ const executive = [
   { name: "Mark Hamilton", role: "Website & IT" },
 ];
 
-const nationalTeam = [
+const nationalTeam: Member[] = [
   { name: "Gary LeBlanc", role: "National Team Program Chair" },
   { name: "Mike Smith", role: "Men's Team Head Coach" },
   { name: "Andrew Soares", role: "Junior Boys Head Coach" },
@@ -36,7 +43,7 @@ const nationalTeam = [
   { name: "VACANT", role: "Junior Girls Coach" },
 ];
 
-const additional = [
+const additional: Member[] = [
   { name: "Kamryn Martins", role: "Accounts Payable" },
   { name: "Braedon Madeiros Cooke", role: "Events Manager" },
   { name: "Cailey Longworth", role: "Equipment Manager" },
@@ -45,21 +52,65 @@ const additional = [
   { name: "Khianda Pearman-Watson", role: "Leagues & Tournament Sponsorships" },
 ];
 
-const CommitteeCard = ({ title, members, delay }: { title: string; members: { name: string; role: string }[]; delay: number }) => (
+// Photo card — used for Board of Directors
+const PhotoCard = ({ member, delay }: { member: Member; delay: number }) => (
+  <div
+    className="flex flex-col items-center gap-3 opacity-0 animate-slide-up"
+    style={{ animationDelay: `${delay}ms` }}
+  >
+    <div className="relative h-32 w-32 overflow-hidden rounded-full border-4 border-accent/20 bg-muted shadow-md">
+      {member.photo ? (
+        <img
+          src={member.photo}
+          alt={member.name}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-primary/10">
+          <User className="h-12 w-12 text-primary/30" />
+        </div>
+      )}
+    </div>
+    <div className="text-center">
+      <p className={`font-heading font-semibold ${member.name === "VACANT" ? "italic text-muted-foreground" : ""}`}>
+        {member.name}
+      </p>
+      <p className="text-sm text-muted-foreground">{member.role}</p>
+    </div>
+  </div>
+);
+
+// Row card — used for other committees
+const MemberRow = ({ member }: { member: Member }) => (
+  <div className="flex items-center gap-4 py-3 border-b last:border-0">
+    <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border-2 border-accent/20 bg-muted">
+      {member.photo ? (
+        <img src={member.photo} alt={member.name} className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-primary/10">
+          <User className="h-5 w-5 text-primary/30" />
+        </div>
+      )}
+    </div>
+    <div className="flex flex-1 items-center justify-between min-w-0">
+      <span className={`font-medium truncate ${member.name === "VACANT" ? "italic text-muted-foreground" : ""}`}>
+        {member.name}
+      </span>
+      <span className="ml-4 text-sm text-muted-foreground text-right shrink-0 max-w-[55%]">{member.role}</span>
+    </div>
+  </div>
+);
+
+const CommitteeList = ({ title, members, delay }: { title: string; members: Member[]; delay: number }) => (
   <Card className="opacity-0 animate-slide-up" style={{ animationDelay: `${delay}ms` }}>
     <div className="h-1 bg-accent" />
     <CardHeader>
       <CardTitle className="font-heading text-xl uppercase">{title}</CardTitle>
     </CardHeader>
-    <CardContent>
-      <div className="divide-y">
-        {members.map((m) => (
-          <div key={m.name + m.role} className="flex justify-between py-3">
-            <span className={`font-medium ${m.name === "VACANT" ? "text-muted-foreground italic" : ""}`}>{m.name}</span>
-            <span className="text-sm text-muted-foreground text-right max-w-[55%]">{m.role}</span>
-          </div>
-        ))}
-      </div>
+    <CardContent className="px-6 pb-6">
+      {members.map((m) => (
+        <MemberRow key={m.name + m.role} member={m} />
+      ))}
     </CardContent>
   </Card>
 );
@@ -68,11 +119,26 @@ const Executives = () => {
   return (
     <Layout>
       <PageHeader title="Board & Committees" subtitle="The people who make BVA happen" />
-      <div className="container mx-auto max-w-4xl px-4 py-12 space-y-8">
-        <CommitteeCard title="Board of Directors" members={board} delay={100} />
-        <CommitteeCard title="BVA Executive Committee" members={executive} delay={200} />
-        <CommitteeCard title="National Team Committee" members={nationalTeam} delay={300} />
-        <CommitteeCard title="Additional Committee Members" members={additional} delay={400} />
+      <div className="container mx-auto max-w-4xl px-4 py-12 space-y-12">
+
+        {/* Board of Directors — photo grid */}
+        <section className="opacity-0 animate-fade-in">
+          <div className="mb-1 h-1 w-12 rounded bg-accent" />
+          <h2 className="mb-8 font-heading text-2xl font-bold uppercase">Board of Directors</h2>
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 md:grid-cols-5">
+            {board.map((m, i) => (
+              <PhotoCard key={m.name + m.role} member={m} delay={100 + i * 80} />
+            ))}
+          </div>
+          <p className="mt-6 text-xs text-muted-foreground text-center">
+            To add photos, place images in <code className="bg-muted px-1 rounded">public/executives/</code> and set the <code className="bg-muted px-1 rounded">photo</code> field to <code className="bg-muted px-1 rounded">/executives/filename.jpg</code>
+          </p>
+        </section>
+
+        {/* Other committees */}
+        <CommitteeList title="BVA Executive Committee" members={executive} delay={500} />
+        <CommitteeList title="National Team Committee" members={nationalTeam} delay={600} />
+        <CommitteeList title="Additional Committee Members" members={additional} delay={700} />
       </div>
     </Layout>
   );
