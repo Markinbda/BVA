@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import AdminLayout from "@/components/admin/AdminLayout";
 import ImageUpload from "@/components/admin/ImageUpload";
@@ -8,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown, Tag } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface GalleryPhoto {
@@ -18,6 +19,12 @@ interface GalleryPhoto {
   image_url: string;
   sort_order: number;
   created_at: string;
+}
+
+interface GalleryCategory {
+  id: string;
+  name: string;
+  sort_order: number;
 }
 
 const CONCURRENCY = 3;
@@ -32,6 +39,7 @@ const AdminGallery = () => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState<"default" | "newest" | "oldest">("default");
+  const [galleryCategories, setGalleryCategories] = useState<GalleryCategory[]>([]);
   const { toast } = useToast();
 
   // Bulk import state
@@ -49,7 +57,13 @@ const AdminGallery = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchPhotos(); }, []);
+  const fetchCategories = async () => {
+    const { data } = await (supabase as any)
+      .from("gallery_categories").select("*").order("sort_order", { ascending: true });
+    setGalleryCategories(data ?? []);
+  };
+
+  useEffect(() => { fetchPhotos(); fetchCategories(); }, []);
 
   const filtered = useMemo(() => {
     let result = photos;
@@ -185,7 +199,10 @@ const AdminGallery = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-foreground">Gallery</h1>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/admin/gallery-categories"><Tag className="h-4 w-4 mr-2" /> Categories</Link>
+            </Button>
             <Button variant="outline" onClick={() => { setBulkImporting(!bulkImporting); setAdding(false); }}>
               {bulkImporting ? <><X className="h-4 w-4 mr-2" /> Cancel</> : <><FolderOpen className="h-4 w-4 mr-2" /> Bulk Import</>}
             </Button>
@@ -225,7 +242,13 @@ const AdminGallery = () => {
             <CardContent className="space-y-4 pt-6">
               <div>
                 <label className="text-sm font-medium block mb-1.5">Category for all imported photos</label>
-                <Input value={bulkCategory} onChange={(e) => setBulkCategory(e.target.value)} placeholder="e.g. WordPress Archive" />
+                <Select value={bulkCategory} onValueChange={setBulkCategory}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {galleryCategories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                    {galleryCategories.length === 0 && <SelectItem value="WordPress Archive">WordPress Archive</SelectItem>}
+                  </SelectContent>
+                </Select>
               </div>
               <div
                 onDragOver={(e) => e.preventDefault()}
@@ -268,7 +291,13 @@ const AdminGallery = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium block mb-1.5">Category</label>
-                  <Input value={newPhoto.category} onChange={(e) => setNewPhoto({ ...newPhoto, category: e.target.value })} />
+                  <Select value={newPhoto.category} onValueChange={(v) => setNewPhoto({ ...newPhoto, category: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {galleryCategories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                      {galleryCategories.length === 0 && <SelectItem value="General">General</SelectItem>}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <label className="text-sm font-medium block mb-1.5">Description</label>

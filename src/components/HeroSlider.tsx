@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import bvaLogo from "@/assets/bva-logo.jpg";
-import heroBeachTournament from "@/assets/hero-beach-tournament.jpg";
-import heroGrassIndoor from "@/assets/hero-grass-indoor.jpg";
-import heroNationalBeach from "@/assets/hero-national-beach.jpg";
-import heroJuniorWomen from "@/assets/hero-junior-women.jpg";
-import heroMensNational from "@/assets/hero-mens-national.png";
-import heroWomensNational from "@/assets/hero-womens-national.jpeg";
+import heroBeachTournament from "@/assets/Splash screen/Mens Beach.jpg";
+import heroNationalBeach from "@/assets/Splash screen/BVA-Early.jpeg";
+import heroJuniorWomen from "@/assets/Splash screen/placeholder-junior.jpg";
+import heroMensNational from "@/assets/Splash screen/Boys Team.jpg";
+import heroWomensNational from "@/assets/Splash screen/hero-womens-national.jpeg";
+import heroGrassIndoor from "@/assets/Splash screen/placeholder-camp.jpg";
 
 const slides = [
   {

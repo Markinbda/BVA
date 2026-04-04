@@ -1,17 +1,24 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { 
-  LayoutDashboard, Newspaper, CalendarDays, Image, FileText, 
-  Heart, LogOut, Menu, X, Settings, Upload, Trophy 
+import {
+  LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
+  Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
+  Tag, MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const navItems = [
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/admin/users", label: "Users", icon: Users },
+  { path: "/admin/seasons", label: "Season History", icon: Medal },
   { path: "/admin/news", label: "News", icon: Newspaper },
   { path: "/admin/events", label: "Events", icon: CalendarDays },
+  { path: "/admin/event-categories", label: "Event Categories", icon: Tag },
+  { path: "/admin/event-locations", label: "Event Locations", icon: MapPin },
   { path: "/admin/gallery", label: "Gallery", icon: Image },
+  { path: "/admin/gallery-categories", label: "Gallery Categories", icon: Tag },
+  { path: "/admin/images", label: "Image Manager", icon: ImagePlus },
   { path: "/admin/pages", label: "Page Content", icon: FileText },
   { path: "/admin/sponsors", label: "Sponsors", icon: Heart },
   { path: "/admin/leagues", label: "Leagues", icon: Trophy },
@@ -20,9 +27,15 @@ const navItems = [
 ];
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {
-  const { signOut, user } = useAuth();
+  const { signOut, user, isAdmin, isLeagueDirector } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const visibleNavItems = isAdmin
+    ? navItems
+    : isLeagueDirector
+      ? navItems.filter((item) => item.path === "/admin/leagues")
+      : [];
 
   return (
     <div className="min-h-screen flex bg-muted/30">

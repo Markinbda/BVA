@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       events: {
         Row: {
+          category_id: string | null
           cost: string | null
           created_at: string
           date: string
@@ -24,11 +25,16 @@ export type Database = {
           id: string
           image_url: string | null
           location: string | null
+          location_id: string | null
+          notes: string | null
           published: boolean
+          start_time: string | null
+          end_time: string | null
           title: string
           updated_at: string
         }
         Insert: {
+          category_id?: string | null
           cost?: string | null
           created_at?: string
           date: string
@@ -37,11 +43,16 @@ export type Database = {
           id?: string
           image_url?: string | null
           location?: string | null
+          location_id?: string | null
+          notes?: string | null
           published?: boolean
+          start_time?: string | null
+          end_time?: string | null
           title: string
           updated_at?: string
         }
         Update: {
+          category_id?: string | null
           cost?: string | null
           created_at?: string
           date?: string
@@ -50,9 +61,76 @@ export type Database = {
           id?: string
           image_url?: string | null
           location?: string | null
+          location_id?: string | null
+          notes?: string | null
           published?: boolean
+          start_time?: string | null
+          end_time?: string | null
           title?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      event_categories: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      event_locations: {
+        Row: {
+          address: string | null
+          city: string | null
+          country: string
+          created_at: string
+          id: string
+          latitude: number | null
+          longitude: number | null
+          name: string
+          notes: string | null
+          postal_code: string | null
+          province: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          country?: string
+          created_at?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          notes?: string | null
+          postal_code?: string | null
+          province?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          country?: string
+          created_at?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          notes?: string | null
+          postal_code?: string | null
+          province?: string | null
         }
         Relationships: []
       }
@@ -357,6 +435,7 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          description: string | null
           id: string
           logo_url: string | null
           name: string
@@ -366,6 +445,7 @@ export type Database = {
         Insert: {
           active?: boolean
           created_at?: string
+          description?: string | null
           id?: string
           logo_url?: string | null
           name: string
@@ -375,6 +455,7 @@ export type Database = {
         Update: {
           active?: boolean
           created_at?: string
+          description?: string | null
           id?: string
           logo_url?: string | null
           name?: string

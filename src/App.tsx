@@ -30,6 +30,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminNews from "./pages/admin/AdminNews";
 import AdminEvents from "./pages/admin/AdminEvents";
 import AdminGallery from "./pages/admin/AdminGallery";
+import AdminImageManager from "./pages/admin/AdminImageManager";
 import AdminPages from "./pages/admin/AdminPages";
 import AdminSponsors from "./pages/admin/AdminSponsors";
 import AdminResetPassword from "./pages/admin/AdminResetPassword";
@@ -37,6 +38,17 @@ import AdminSettings from "./pages/admin/AdminSettings";
 import AdminImport from "./pages/admin/AdminImport";
 import AdminLeagues from "./pages/admin/AdminLeagues";
 import AdminLeagueWeek from "./pages/admin/AdminLeagueWeek";
+import AdminUsers from "./pages/admin/AdminUsers";
+import AdminSeasons from "./pages/admin/AdminSeasons";
+import AdminEventCategories from "./pages/admin/AdminEventCategories";
+import AdminGalleryCategories from "./pages/admin/AdminGalleryCategories";
+import AdminEventLocations from "./pages/admin/AdminEventLocations";
+import InlineEditManager from "@/components/admin/InlineEditManager";
+import InlineEditToolbar from "@/components/admin/InlineEditToolbar";
+import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
+import MemberRegistration from "./pages/MemberRegistration";
+import ProfileDashboard from "./pages/ProfileDashboard";
+import PlayerSearch from "./pages/PlayerSearch";
 import LeagueStandings from "./pages/LeagueStandings";
 // About sub-pages
 import Mission from "./pages/about/Mission";
@@ -75,9 +87,10 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/" element={<Index />} />
+          <AdminEditModeProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Index />} />
             <Route path="/news" element={<News />} />
             <Route path="/news/:id" element={<NewsArticle />} />
             <Route path="/events" element={<Events />} />
@@ -104,12 +117,18 @@ const App = () => (
             <Route path="/admin/news" element={<AdminRoute><AdminNews /></AdminRoute>} />
             <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
             <Route path="/admin/gallery" element={<AdminRoute><AdminGallery /></AdminRoute>} />
+            <Route path="/admin/images" element={<AdminRoute><AdminImageManager /></AdminRoute>} />
             <Route path="/admin/pages" element={<AdminRoute><AdminPages /></AdminRoute>} />
             <Route path="/admin/sponsors" element={<AdminRoute><AdminSponsors /></AdminRoute>} />
             <Route path="/admin/settings" element={<AdminRoute><AdminSettings /></AdminRoute>} />
             <Route path="/admin/import" element={<AdminRoute><AdminImport /></AdminRoute>} />
             <Route path="/admin/leagues" element={<AdminRoute><AdminLeagues /></AdminRoute>} />
             <Route path="/admin/leagues/:seasonId/week/:weekNum" element={<AdminRoute><AdminLeagueWeek /></AdminRoute>} />
+            <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+            <Route path="/admin/seasons" element={<AdminRoute><AdminSeasons /></AdminRoute>} />
+            <Route path="/admin/event-categories" element={<AdminRoute><AdminEventCategories /></AdminRoute>} />
+            <Route path="/admin/gallery-categories" element={<AdminRoute><AdminGalleryCategories /></AdminRoute>} />
+            <Route path="/admin/event-locations" element={<AdminRoute><AdminEventLocations /></AdminRoute>} />
 
             {/* About sub-pages */}
             <Route path="/about/mission" element={<Mission />} />
@@ -141,11 +160,17 @@ const App = () => (
             {/* Public league standings */}
             <Route path="/leagues/standings/:seasonId" element={<LeagueStandings />} />
 
+            <Route path="/member-registration" element={<MemberRegistration />} />
+            <Route path="/profile" element={<ProfileDashboard />} />
+            <Route path="/players" element={<PlayerSearch />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+          <InlineEditManager />
+          <InlineEditToolbar />
+        </AdminEditModeProvider>
+      </AuthProvider>
+    </BrowserRouter>
+      </TooltipProvider>
   </QueryClientProvider>
 );
 
