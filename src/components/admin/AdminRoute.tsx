@@ -2,8 +2,13 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
-const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, isAdmin, loading, signOut } = useAuth();
+interface AdminRouteProps {
+  children: React.ReactNode;
+  allowedRoles?: Array<"admin" | "league_director">;
+}
+
+const AdminRoute = ({ children, allowedRoles = ["admin"] }: AdminRouteProps) => {
+  const { user, isAdmin, isLeagueDirector, loading, signOut } = useAuth();
 
   if (loading) {
     return (
@@ -17,7 +22,9 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/admin/login" replace />;
   }
 
-  if (!isAdmin) {
+  const hasAccess = isAdmin || (allowedRoles.includes("league_director") && isLeagueDirector);
+
+  if (!hasAccess) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">

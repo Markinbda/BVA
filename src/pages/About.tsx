@@ -2,8 +2,9 @@ import Layout from "@/components/Layout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Users, Globe, Trophy, GraduationCap, Heart, Award } from "lucide-react";
-import placeholderNational from "@/assets/placeholder-national.jpg";
+import placeholderNational from "@/assets/BVA-Early.jpg";
 import bvaLogo from "@/assets/bva-logo.jpg";
+import fiftyYears from "@/assets/50_years.jpg";
 
 const offerings = [
   { icon: Trophy, label: "Leagues & Tournaments" },
@@ -17,18 +18,13 @@ const offerings = [
 const About = () => {
   return (
     <Layout>
-      <PageHeader title="About Us" subtitle="Promoting volleyball in Bermuda for over 50 years" />
+      <PageHeader title="About Us" subtitle="Promoting volleyball in Bermuda for over 50 years" image={fiftyYears} />
       <div className="container mx-auto max-w-4xl px-4 py-12 space-y-12">
-        {/* Logo Placeholders */}
-        <div className="flex flex-wrap items-center justify-center gap-8 opacity-0 animate-fade-in">
-          <img src={bvaLogo} alt="Bermuda Volleyball Association Logo" className="h-32 w-32 rounded-full object-contain" />
-        </div>
-
         {/* History */}
         <section className="opacity-0 animate-slide-up" style={{ animationDelay: "100ms" }}>
           <h2 className="mb-4 font-heading text-3xl font-bold uppercase">Our History</h2>
           <p className="text-muted-foreground leading-relaxed">
-            The Bermuda Volleyball Association has been established for more than 40 years. We are the official 
+            The Bermuda Volleyball Association has been established for more than 50 years. We are the official 
             Sports Governing Body for Volleyball in Bermuda. We are part of the ECVA, NORCECA and FIVB. We offer 
             recreational indoor & beach leagues and tournaments, referee and coaching courses, youth development 
             programs and manage the national team program for juniors and seniors. We are a volunteer based 
@@ -37,8 +33,8 @@ const About = () => {
         </section>
 
         {/* Image */}
-        <div className="overflow-hidden rounded-lg opacity-0 animate-slide-up" style={{ animationDelay: "200ms" }}>
-          <img src={placeholderNational} alt="BVA National Teams" className="h-48 w-full object-cover" />
+        <div className="rounded-lg opacity-0 animate-slide-up" style={{ animationDelay: "200ms" }}>
+          <img src={placeholderNational} alt="BVA National Teams" className="w-full object-contain" />
         </div>
 
         {/* Affiliations */}

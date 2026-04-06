@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import bvaLogo from "@/assets/bva-logo.jpg";
 import heroBeachTournament from "@/assets/Splash screen/Mens Beach.jpg";
-import heroNationalBeach from "@/assets/Splash screen/BVA-Early.jpeg";
+import heroNationalBeach from "@/assets/Splash screen/BVA-Early.jpg";
 import heroJuniorWomen from "@/assets/Splash screen/placeholder-junior.jpg";
 import heroMensNational from "@/assets/Splash screen/Boys Team.jpg";
 import heroWomensNational from "@/assets/Splash screen/hero-womens-national.jpeg";

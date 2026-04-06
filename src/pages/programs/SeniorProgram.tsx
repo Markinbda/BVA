@@ -4,7 +4,7 @@ import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Trophy, Globe } from "lucide-react";
-import placeholderNational from "@/assets/placeholder-national.jpg";
+import placeholderNational from "@/assets/BVA-Early.jpg";
 
 const SeniorProgram = () => {
   return (

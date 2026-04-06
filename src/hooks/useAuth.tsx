@@ -6,8 +6,13 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAdmin: boolean;
+  isLeagueDirector: boolean;
+  permissions: string[];
+  canEditContent: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
+  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -15,8 +20,12 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isAdmin: false,
+  permissions: [],
+  canEditContent: false,
   loading: true,
   signIn: async () => ({ error: null }),
+  signUp: async () => ({ error: null }),
+  verifyOtp: async () => ({ error: null }),
   signOut: async () => {},
 });
 
@@ -26,6 +35,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLeagueDirector, setIsLeagueDirector] = useState(false);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [canEditContent, setCanEditContent] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const checkAdminRole = async (userId: string) => {
@@ -36,15 +48,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsAdmin(!!data);
   };
 
+  const checkUserPermissions = async (userId: string) => {
+    const { data } = await supabase.from<any>("user_permissions").select("permission").eq("user_id", userId);
+    const loadedPermissions = data?.map((item: any) => item.permission as string) ?? [];
+    setPermissions(loadedPermissions);
+    setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin"].includes(permission)));
+  };
+
+  const checkLeagueDirectorRole = async (userId: string) => {
+    const { data } = await supabase.rpc("has_role", {
+      _user_id: userId,
+      _role: "league_director",
+    } as any);
+    setIsLeagueDirector(!!data);
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => checkAdminRole(session.user.id), 0);
+          setTimeout(() => {
+            checkAdminRole(session.user.id);
+            checkLeagueDirectorRole(session.user.id);
+            checkUserPermissions(session.user.id);
+          }, 0);
         } else {
           setIsAdmin(false);
+          setPermissions([]);
+          setCanEditContent(false);
         }
         setLoading(false);
       }
@@ -55,6 +88,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         checkAdminRole(session.user.id);
+        checkLeagueDirectorRole(session.user.id);
+        checkUserPermissions(session.user.id);
       }
       setLoading(false);
     });
@@ -67,13 +102,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { error: error as Error | null };
   };
 
+  const signUp = async (email: string, password: string, displayName: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { display_name: displayName } },
+    });
+    if (!error && data.user) {
+      await supabase.from("profiles").upsert({
+        user_id: data.user.id,
+        display_name: displayName,
+      });
+    }
+    return { error: error as Error | null };
+  };
+
+  const verifyOtp = async (email: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: "signup" });
+    return { error: error as Error | null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setIsAdmin(false);
+    setIsLeagueDirector(false);
+    setPermissions([]);
+    setCanEditContent(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isLeagueDirector, permissions, canEditContent, loading, signIn, signUp, verifyOtp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

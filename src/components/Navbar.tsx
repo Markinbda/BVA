@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { Menu, X, ChevronDown, User, LogOut, ShieldCheck, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAdminEditMode } from "@/contexts/AdminEditModeContext";
+import { useAuth } from "@/hooks/useAuth";
+import AuthModal from "@/components/AuthModal";
 import bvaLogo from "@/assets/bva-logo.jpg";
 
 const navItems = [
@@ -84,13 +87,21 @@ const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [openMobileSubmenu, setOpenMobileSubmenu] = useState<string | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const location = useLocation();
   const navRef = useRef<HTMLUListElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const { user, isAdmin, canEditContent, signOut } = useAuth();
+  const { editMode, setEditMode } = useAdminEditMode();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (navRef.current && !navRef.current.contains(e.target as Node)) {
         setOpenDropdown(null);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -101,6 +112,7 @@ const Navbar = () => {
     setMobileOpen(false);
     setOpenMobileSubmenu(null);
     setOpenDropdown(null);
+    setUserMenuOpen(false);
   }, [location.pathname]);
 
   const isActive = (path: string) => location.pathname === path;
@@ -184,22 +196,119 @@ const Navbar = () => {
           )}
         </ul>
 
-        {/* Mobile toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-primary-foreground lg:hidden"
-          onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="Toggle menu"
-        >
-          {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </Button>
+        {/* Auth area */}
+        <div className="flex items-center gap-2">
+          {canEditContent ? (
+            <Button size="sm" variant={editMode ? "secondary" : "outline"} onClick={() => setEditMode(!editMode)}>
+              {editMode ? "Exit Edit Mode" : "Edit Mode"}
+            </Button>
+          ) : null}
+          {user ? (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen((p) => !p)}
+                className="flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-accent/30 transition-colors"
+              >
+                <User className="h-4 w-4" />
+                <span className="hidden sm:inline max-w-[120px] truncate">
+                  {user.user_metadata?.display_name || user.email}
+                </span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${userMenuOpen ? "rotate-180" : ""}`} />
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border bg-popover p-2 shadow-lg">
+                  <p className="px-3 py-1 text-xs text-muted-foreground truncate">{user.email}</p>
+                  <div className="my-1 h-px bg-border" />
+                  <Link
+                    to="/profile"
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                  >
+                    <User className="h-4 w-4" />
+                    My Profile
+                  </Link>
+                  <Link
+                    to="/players"
+                    className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                  >
+                    <Search className="h-4 w-4" />
+                    Find Players
+                  </Link>
+                  {isAdmin && (
+                    <Link
+                      to="/admin"
+                      className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Admin Panel
+                    </Link>
+                  )}
+                  <div className="my-1 h-px bg-border" />
+                  <button
+                    onClick={() => { signOut(); setUserMenuOpen(false); }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="hidden lg:flex bg-white text-primary border-white hover:bg-primary hover:text-white hover:border-white transition-colors"
+              onClick={() => setAuthModalOpen(true)}
+            >
+              Sign In
+            </Button>
+          )}
+
+          {/* Mobile toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-primary-foreground lg:hidden"
+            onClick={() => setMobileOpen(!mobileOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </Button>
+        </div>
       </nav>
+      <AuthModal open={authModalOpen} onOpenChange={setAuthModalOpen} />
 
       {/* Mobile menu */}
       {mobileOpen && (
         <div className="border-t border-accent/20 bg-primary lg:hidden">
           <ul className="container mx-auto flex flex-col gap-1 px-4 py-4">
+            {!user && (
+              <li>
+                <button
+                  onClick={() => { setMobileOpen(false); setAuthModalOpen(true); }}
+                  className="block w-full rounded-md px-4 py-3 text-left font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors"
+                >
+                  Sign In / Register
+                </button>
+              </li>
+            )}
+            {user && isAdmin && (
+              <li>
+                <Link to="/admin" className="block rounded-md px-4 py-3 font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors">
+                  Admin Panel
+                </Link>
+              </li>
+            )}
+            {user && (
+              <li>
+                <button
+                  onClick={() => { signOut(); setMobileOpen(false); }}
+                  className="block w-full rounded-md px-4 py-3 text-left font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors"
+                >
+                  Sign Out
+                </button>
+              </li>
+            )}
             {navItems.map((item) =>
               item.children ? (
                 <li key={item.path}>
