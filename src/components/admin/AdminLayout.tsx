@@ -10,32 +10,32 @@ import { useState } from "react";
 
 const navItems = [
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/admin/users", label: "Users", icon: Users },
-  { path: "/admin/seasons", label: "Season History", icon: Medal },
-  { path: "/admin/news", label: "News", icon: Newspaper },
-  { path: "/admin/events", label: "Events", icon: CalendarDays },
-  { path: "/admin/event-categories", label: "Event Categories", icon: Tag },
-  { path: "/admin/event-locations", label: "Event Locations", icon: MapPin },
-  { path: "/admin/gallery", label: "Gallery", icon: Image },
-  { path: "/admin/gallery-categories", label: "Gallery Categories", icon: Tag },
-  { path: "/admin/images", label: "Image Manager", icon: ImagePlus },
-  { path: "/admin/pages", label: "Page Content", icon: FileText },
-  { path: "/admin/sponsors", label: "Sponsors", icon: Heart },
-  { path: "/admin/leagues", label: "Leagues", icon: Trophy },
-  { path: "/admin/settings", label: "Settings", icon: Settings },
-  { path: "/admin/import", label: "WP Import", icon: Upload },
+  { path: "/admin/users", label: "System Users", icon: Users, permission: "manage_users" },
+  { path: "/admin/seasons", label: "Season History", icon: Medal, permission: "manage_leagues" },
+  { path: "/admin/news", label: "News", icon: Newspaper, permission: "manage_news" },
+  { path: "/admin/events", label: "Events", icon: CalendarDays, permission: "manage_events" },
+  { path: "/admin/event-categories", label: "Event Categories", icon: Tag, permission: "manage_events" },
+  { path: "/admin/event-locations", label: "Event Locations", icon: MapPin, permission: "manage_events" },
+  { path: "/admin/gallery", label: "Gallery", icon: Image, permission: "manage_gallery" },
+  { path: "/admin/gallery-categories", label: "Gallery Categories", icon: Tag, permission: "manage_gallery" },
+  { path: "/admin/images", label: "Image Manager", icon: ImagePlus, permission: "manage_images" },
+  { path: "/admin/pages", label: "Page Content", icon: FileText, permission: "manage_pages" },
+  { path: "/admin/sponsors", label: "Sponsors", icon: Heart, permission: "manage_sponsors" },
+  { path: "/admin/leagues", label: "Leagues", icon: Trophy, permission: "manage_leagues" },
+  { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
+  { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
 ];
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {
-  const { signOut, user, isAdmin, isLeagueDirector } = useAuth();
+  const { signOut, user, isAdmin, isSystemUser, hasPermission } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const visibleNavItems = isAdmin
-    ? navItems
-    : isLeagueDirector
-      ? navItems.filter((item) => item.path === "/admin/leagues")
-      : [];
+  const visibleNavItems = navItems.filter((item) => {
+    if (isAdmin) return true;
+    if (!item.permission) return isSystemUser;
+    return hasPermission(item.permission);
+  });
 
   return (
     <div className="min-h-screen flex bg-muted/30">
@@ -66,7 +66,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
           </div>
 
           <nav className="flex-1 p-3 space-y-1">
-            {navItems.map(({ path, label, icon: Icon }) => {
+            {visibleNavItems.map(({ path, label, icon: Icon }) => {
               const isActive = location.pathname === path;
               return (
                 <Link

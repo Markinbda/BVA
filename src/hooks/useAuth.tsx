@@ -1,15 +1,18 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { hasSystemAccess } from "@/lib/adminPermissions";
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAdmin: boolean;
   isLeagueDirector: boolean;
+  isSystemUser: boolean;
   permissions: string[];
   canEditContent: boolean;
   loading: boolean;
+  hasPermission: (permission: string | string[]) => boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
   verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
@@ -20,9 +23,12 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isAdmin: false,
+  isLeagueDirector: false,
+  isSystemUser: false,
   permissions: [],
   canEditContent: false,
   loading: true,
+  hasPermission: () => false,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
   verifyOtp: async () => ({ error: null }),
@@ -40,6 +46,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [canEditContent, setCanEditContent] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const hasPermission = (required: string | string[]) => {
+    const requiredList = Array.isArray(required) ? required : [required];
+    if (isAdmin) return true;
+    return requiredList.some((permission) => permissions.includes(permission));
+  };
+
+  const isSystemUser = isAdmin || isLeagueDirector || hasSystemAccess(permissions);
+
   const checkAdminRole = async (userId: string) => {
     const { data } = await supabase.rpc("has_role", {
       _user_id: userId,
@@ -52,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data } = await supabase.from<any>("user_permissions").select("permission").eq("user_id", userId);
     const loadedPermissions = data?.map((item: any) => item.permission as string) ?? [];
     setPermissions(loadedPermissions);
-    setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin"].includes(permission)));
+    setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin", "manage_pages"].includes(permission)));
   };
 
   const checkLeagueDirectorRole = async (userId: string) => {
@@ -131,7 +145,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isLeagueDirector, permissions, canEditContent, loading, signIn, signUp, verifyOtp, signOut }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isLeagueDirector, isSystemUser, permissions, canEditContent, loading, hasPermission, signIn, signUp, verifyOtp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

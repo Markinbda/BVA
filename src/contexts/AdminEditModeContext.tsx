@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,17 +40,12 @@ export const useAdminEditMode = () => {
 };
 
 export const AdminEditModeProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user, isAdmin, permissions } = useAuth();
+  const { user, canEditContent, permissions } = useAuth();
   const { toast } = useToast();
   const [editMode, setEditMode] = useState(false);
   const [changes, setChanges] = useState<EditChange[]>([]);
   const [revertHandler, setRevertHandler] = useState<((changes: EditChange[]) => void) | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const canEditContent = useMemo(
-    () => isAdmin && permissions.some((permission) => ["content_editor", "super_admin"].includes(permission)),
-    [isAdmin, permissions]
-  );
 
   const addChange = (change: EditChange) => {
     setChanges((previous) => {

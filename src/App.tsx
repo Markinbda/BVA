@@ -114,21 +114,21 @@ const App = () => (
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/reset-password" element={<AdminResetPassword />} />
             <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-            <Route path="/admin/news" element={<AdminRoute><AdminNews /></AdminRoute>} />
-            <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
-            <Route path="/admin/gallery" element={<AdminRoute><AdminGallery /></AdminRoute>} />
-            <Route path="/admin/images" element={<AdminRoute><AdminImageManager /></AdminRoute>} />
-            <Route path="/admin/pages" element={<AdminRoute><AdminPages /></AdminRoute>} />
-            <Route path="/admin/sponsors" element={<AdminRoute><AdminSponsors /></AdminRoute>} />
-            <Route path="/admin/settings" element={<AdminRoute><AdminSettings /></AdminRoute>} />
-            <Route path="/admin/import" element={<AdminRoute><AdminImport /></AdminRoute>} />
-            <Route path="/admin/leagues" element={<AdminRoute><AdminLeagues /></AdminRoute>} />
-            <Route path="/admin/leagues/:seasonId/week/:weekNum" element={<AdminRoute><AdminLeagueWeek /></AdminRoute>} />
-            <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
-            <Route path="/admin/seasons" element={<AdminRoute><AdminSeasons /></AdminRoute>} />
-            <Route path="/admin/event-categories" element={<AdminRoute><AdminEventCategories /></AdminRoute>} />
-            <Route path="/admin/gallery-categories" element={<AdminRoute><AdminGalleryCategories /></AdminRoute>} />
-            <Route path="/admin/event-locations" element={<AdminRoute><AdminEventLocations /></AdminRoute>} />
+            <Route path="/admin/news" element={<AdminRoute requiredPermissions={["manage_news"]}><AdminNews /></AdminRoute>} />
+            <Route path="/admin/events" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEvents /></AdminRoute>} />
+            <Route path="/admin/gallery" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGallery /></AdminRoute>} />
+            <Route path="/admin/images" element={<AdminRoute requiredPermissions={["manage_images", "manage_pages"]}><AdminImageManager /></AdminRoute>} />
+            <Route path="/admin/pages" element={<AdminRoute requiredPermissions={["manage_pages"]}><AdminPages /></AdminRoute>} />
+            <Route path="/admin/sponsors" element={<AdminRoute requiredPermissions={["manage_sponsors"]}><AdminSponsors /></AdminRoute>} />
+            <Route path="/admin/settings" element={<AdminRoute requiredPermissions={["manage_settings"]}><AdminSettings /></AdminRoute>} />
+            <Route path="/admin/import" element={<AdminRoute requiredPermissions={["manage_import"]}><AdminImport /></AdminRoute>} />
+            <Route path="/admin/leagues" element={<AdminRoute allowedRoles={["admin", "league_director"]} requiredPermissions={["manage_leagues"]}><AdminLeagues /></AdminRoute>} />
+            <Route path="/admin/leagues/:seasonId/week/:weekNum" element={<AdminRoute allowedRoles={["admin", "league_director"]} requiredPermissions={["manage_leagues"]}><AdminLeagueWeek /></AdminRoute>} />
+            <Route path="/admin/users" element={<AdminRoute requiredPermissions={["manage_users"]}><AdminUsers /></AdminRoute>} />
+            <Route path="/admin/seasons" element={<AdminRoute requiredPermissions={["manage_leagues"]}><AdminSeasons /></AdminRoute>} />
+            <Route path="/admin/event-categories" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventCategories /></AdminRoute>} />
+            <Route path="/admin/gallery-categories" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGalleryCategories /></AdminRoute>} />
+            <Route path="/admin/event-locations" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventLocations /></AdminRoute>} />
 
             {/* About sub-pages */}
             <Route path="/about/mission" element={<Mission />} />
