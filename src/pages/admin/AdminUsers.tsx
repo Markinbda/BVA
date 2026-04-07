@@ -174,11 +174,11 @@ const AdminUsers = () => {
         } as any);
       error = result.error;
     } else {
-      const [permissionsResult, rolesResult] = await Promise.all([
-        (supabase as any).from("user_permissions").delete().eq("user_id", user.userId),
-        supabase.from("user_roles").delete().eq("user_id", user.userId),
-      ]);
-      error = permissionsResult.error ?? rolesResult.error;
+      const permissionsResult = await (supabase as any)
+        .from("user_permissions")
+        .delete()
+        .eq("user_id", user.userId);
+      error = permissionsResult.error;
     }
 
     if (error) {
