@@ -65,6 +65,11 @@ export const ADMIN_PERMISSION_OPTIONS: AdminPermissionOption[] = [
     label: "Inline editor",
     description: "Use edit mode on public-facing pages",
   },
+  {
+    permission: "manage_coaches",
+    label: "Coach portal",
+    description: "Access the coach portal to manage players, teams, and email lists",
+  },
 ];
 
 export const ADMIN_SECTION_PERMISSIONS = ADMIN_PERMISSION_OPTIONS.map((option) => option.permission).filter(

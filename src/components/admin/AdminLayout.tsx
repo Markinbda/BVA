@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
   Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
-  Tag, MapPin
+  Tag, MapPin, ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -24,6 +24,7 @@ const navItems = [
   { path: "/admin/leagues", label: "Leagues", icon: Trophy, permission: "manage_leagues" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
+  { path: "/coach", label: "Coach Portal", icon: ClipboardList, permission: "manage_coaches" },
 ];
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {

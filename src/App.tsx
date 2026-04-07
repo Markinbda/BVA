@@ -77,6 +77,13 @@ import SocialMedia from "./pages/gallery/SocialMedia";
 // Registration sub-pages
 import WinterLeagueReg from "./pages/registration/WinterLeagueReg";
 import BeachRegistration from "./pages/registration/BeachRegistration";
+// Coach portal
+import CoachRoute from "@/components/coach/CoachRoute";
+import CoachDashboard from "./pages/coach/CoachDashboard";
+import CoachPlayers from "./pages/coach/CoachPlayers";
+import CoachTeams from "./pages/coach/CoachTeams";
+import CoachEmail from "./pages/coach/CoachEmail";
+import CoachEmailHistory from "./pages/coach/CoachEmailHistory";
 
 const queryClient = new QueryClient();
 
@@ -163,6 +170,14 @@ const App = () => (
             <Route path="/member-registration" element={<MemberRegistration />} />
             <Route path="/profile" element={<ProfileDashboard />} />
             <Route path="/players" element={<PlayerSearch />} />
+
+            {/* Coach portal */}
+            <Route path="/coach" element={<CoachRoute><CoachDashboard /></CoachRoute>} />
+            <Route path="/coach/players" element={<CoachRoute><CoachPlayers /></CoachRoute>} />
+            <Route path="/coach/teams" element={<CoachRoute><CoachTeams /></CoachRoute>} />
+            <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
+            <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
           <InlineEditManager />
