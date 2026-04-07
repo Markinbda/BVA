@@ -5,6 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -13,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Search, ShieldCheck, UserCog, UserPlus, UserX, Users } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Pencil, Search, ShieldCheck, UserCog, UserPlus, UserX, Users } from "lucide-react";
 import { ADMIN_PERMISSION_OPTIONS, hasSystemAccess } from "@/lib/adminPermissions";
 
 type AppRole = "admin" | "user";
@@ -27,13 +35,16 @@ interface ProfileRecord {
   volleyball_formats: string[] | null;
   team_formats: string[] | null;
   experience_level: string | null;
+  phone: string | null;
 }
 
 interface UserRow {
   userId: string;
   displayName: string;
+  email: string;
   createdAt: string;
   dateOfBirth: string | null;
+  phone: string | null;
   memberRoles: string[];
   formats: string[];
   experienceLevel: string | null;
@@ -44,13 +55,329 @@ interface UserRow {
   savingAccess: boolean;
 }
 
+// ── Helper to call the admin-user-management edge function ─────────────────────
+async function callAdminFn(action: string, payload: Record<string, unknown>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const res = await fetch(`${supabaseUrl}/functions/v1/admin-user-management`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
 const formatDate = (value: string | null) => (value ? new Date(value).toLocaleDateString() : "—");
 const formatList = (values: string[]) => (values.length ? values.join(", ") : "—");
+
+// ── Add User Dialog ────────────────────────────────────────────────────────────
+const AddUserDialog = ({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) => {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ displayName: "", email: "", password: "", phone: "" });
+  const [showPw, setShowPw] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.email || !form.password || !form.displayName) {
+      toast({ title: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    const result = await callAdminFn("create_user", {
+      email: form.email,
+      password: form.password,
+      display_name: form.displayName,
+      phone: form.phone || undefined,
+    });
+    setSaving(false);
+    if (result.error) {
+      toast({ title: "Failed to create user", description: result.error as string, variant: "destructive" });
+    } else {
+      toast({ title: "User created successfully" });
+      setForm({ displayName: "", email: "", password: "", phone: "" });
+      onCreated();
+      onClose();
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add New User</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="add-name">Full Name *</Label>
+            <Input id="add-name" value={form.displayName} onChange={set("displayName")} placeholder="Jane Smith" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-email">Email *</Label>
+            <Input id="add-email" type="email" value={form.email} onChange={set("email")} placeholder="jane@example.com" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-phone">Phone</Label>
+            <Input id="add-phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="+1 441 000 0000" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="add-password">Password *</Label>
+            <div className="relative">
+              <Input
+                id="add-password"
+                type={showPw ? "text" : "password"}
+                value={form.password}
+                onChange={set("password")}
+                placeholder="Min. 8 characters"
+                minLength={8}
+                required
+                className="pr-10"
+              />
+              <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPw((p) => !p)}>
+                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create User"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ── Edit User Dialog ───────────────────────────────────────────────────────────
+const EditUserDialog = ({
+  user,
+  onClose,
+  onSaved,
+}: {
+  user: UserRow | null;
+  onClose: () => void;
+  onSaved: (userId: string, updates: Partial<UserRow>) => void;
+}) => {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ displayName: "", email: "", dateOfBirth: "", phone: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setForm({
+        displayName: user.displayName === "Unnamed member" ? "" : user.displayName,
+        email: user.email,
+        dateOfBirth: user.dateOfBirth ?? "",
+        phone: user.phone ?? "",
+      });
+    }
+  }, [user]);
+
+  const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setSaving(true);
+
+    const profileUpdates: Record<string, unknown> = {
+      display_name: form.displayName || null,
+      date_of_birth: form.dateOfBirth || null,
+      phone: form.phone || null,
+    };
+
+    const { error: profileErr } = await (supabase as any)
+      .from("profiles")
+      .update(profileUpdates)
+      .eq("user_id", user.userId);
+
+    if (profileErr) {
+      setSaving(false);
+      toast({ title: "Failed to update profile", description: profileErr.message, variant: "destructive" });
+      return;
+    }
+
+    // Update email if changed
+    if (form.email && form.email !== user.email) {
+      const result = await callAdminFn("update_email", { user_id: user.userId, email: form.email });
+      if (result.error) {
+        setSaving(false);
+        toast({ title: "Profile saved but email update failed", description: result.error as string, variant: "destructive" });
+        return;
+      }
+    }
+
+    setSaving(false);
+    toast({ title: "User updated" });
+    onSaved(user.userId, {
+      displayName: form.displayName || "Unnamed member",
+      email: form.email,
+      dateOfBirth: form.dateOfBirth || null,
+      phone: form.phone || null,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open={!!user} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit User — {user?.displayName}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-name">Full Name</Label>
+            <Input id="edit-name" value={form.displayName} onChange={set("displayName")} placeholder="Unnamed member" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input id="edit-email" type="email" value={form.email} onChange={set("email")} placeholder="user@example.com" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-phone">Phone</Label>
+            <Input id="edit-phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="+1 441 000 0000" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-dob">Date of Birth</Label>
+            <Input id="edit-dob" type="date" value={form.dateOfBirth} onChange={set("dateOfBirth")} />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// ── Reset Password Dialog ──────────────────────────────────────────────────────
+const ResetPasswordDialog = ({
+  user,
+  onClose,
+}: {
+  user: UserRow | null;
+  onClose: () => void;
+}) => {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<"email" | "manual">("email");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) { setMode("email"); setPassword(""); }
+  }, [user]);
+
+  const handleSendEmail = async () => {
+    if (!user) return;
+    setSaving(true);
+    const result = await callAdminFn("reset_password_email", { email: user.email });
+    setSaving(false);
+    if (result.error) {
+      toast({ title: "Failed to send reset email", description: result.error as string, variant: "destructive" });
+    } else {
+      toast({ title: "Password reset email sent", description: `Sent to ${user.email}` });
+      onClose();
+    }
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || password.length < 8) return;
+    setSaving(true);
+    const result = await callAdminFn("set_password", { user_id: user.userId, password });
+    setSaving(false);
+    if (result.error) {
+      toast({ title: "Failed to set password", description: result.error as string, variant: "destructive" });
+    } else {
+      toast({ title: "Password updated successfully" });
+      onClose();
+    }
+  };
+
+  return (
+    <Dialog open={!!user} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset Password — {user?.displayName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Button size="sm" variant={mode === "email" ? "default" : "outline"} onClick={() => setMode("email")}>
+              Send Reset Email
+            </Button>
+            <Button size="sm" variant={mode === "manual" ? "default" : "outline"} onClick={() => setMode("manual")}>
+              Set New Password
+            </Button>
+          </div>
+
+          {mode === "email" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                A password reset link will be sent to <strong>{user?.email}</strong>.
+              </p>
+              <DialogFooter>
+                <Button variant="outline" onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSendEmail} disabled={saving}>{saving ? "Sending…" : "Send Email"}</Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleSetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="reset-pw">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="reset-pw"
+                    type={showPw ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Min. 8 characters"
+                    minLength={8}
+                    required
+                    className="pr-10"
+                  />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setShowPw((p) => !p)}>
+                    {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+                <Button type="submit" disabled={saving || password.length < 8}>{saving ? "Saving…" : "Set Password"}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const AdminUsers = () => {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [editUser, setEditUser] = useState<UserRow | null>(null);
+  const [resetUser, setResetUser] = useState<UserRow | null>(null);
   const { toast } = useToast();
 
   const setUserState = (userId: string, update: (user: UserRow) => UserRow) => {
@@ -91,8 +418,10 @@ const AdminUsers = () => {
       return {
         userId: profile.user_id,
         displayName: profile.display_name?.trim() || "Unnamed member",
+        email: "",
         createdAt: profile.created_at,
         dateOfBirth: profile.date_of_birth,
+        phone: profile.phone ?? null,
         memberRoles: profile.roles ?? [],
         formats,
         experienceLevel: profile.experience_level,
@@ -106,6 +435,17 @@ const AdminUsers = () => {
 
     setUsers(mappedUsers);
     setLoading(false);
+
+    // Fetch emails asynchronously (requires edge function)
+    if (mappedUsers.length > 0) {
+      const emailResult = await callAdminFn("list_emails", {
+        user_ids: mappedUsers.map((u) => u.userId),
+      });
+      const emailMap = (emailResult.emails ?? {}) as Record<string, string>;
+      setUsers((prev) =>
+        prev.map((u) => ({ ...u, email: emailMap[u.userId] ?? "" }))
+      );
+    }
   };
 
   useEffect(() => {
@@ -119,6 +459,7 @@ const AdminUsers = () => {
     return users.filter((user) => {
       const haystack = [
         user.displayName,
+        user.email,
         ...user.memberRoles,
         ...user.formats,
         user.role,
@@ -247,16 +588,30 @@ const AdminUsers = () => {
     toast({ title: grant ? "Access granted" : "Access removed" });
   };
 
+  const handleEditSaved = (userId: string, updates: Partial<UserRow>) => {
+    setUserState(userId, (user) => ({ ...user, ...updates }));
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Users className="h-6 w-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Users</h1>
-            <p className="text-muted-foreground">Separate registered members from system users and assign only the admin areas they should access.</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Users className="h-6 w-6 text-primary" />
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Users</h1>
+              <p className="text-muted-foreground">Separate registered members from system users and assign only the admin areas they should access.</p>
+            </div>
           </div>
+          <Button onClick={() => setShowAddUser(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add User
+          </Button>
         </div>
+
+        <AddUserDialog open={showAddUser} onClose={() => setShowAddUser(false)} onCreated={fetchUsers} />
+        <EditUserDialog user={editUser} onClose={() => setEditUser(null)} onSaved={handleEditSaved} />
+        <ResetPasswordDialog user={resetUser} onClose={() => setResetUser(null)} />
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
@@ -317,6 +672,22 @@ const AdminUsers = () => {
                             <SelectItem value="admin">admin</SelectItem>
                           </SelectContent>
                         </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditUser(user)}
+                        >
+                          <Pencil className="mr-2 h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setResetUser(user)}
+                        >
+                          <KeyRound className="mr-2 h-3 w-3" />
+                          Password
+                        </Button>
                         <Button
                           variant="outline"
                           onClick={() => handleSystemUserToggle(user, false)}
@@ -400,28 +771,42 @@ const AdminUsers = () => {
                   <thead>
                     <tr className="border-b text-left text-muted-foreground">
                       <th className="pb-2 pr-4 font-medium">Full Name</th>
+                      <th className="pb-2 pr-4 font-medium">Email</th>
                       <th className="pb-2 pr-4 font-medium">Joined</th>
                       <th className="pb-2 pr-4 font-medium">Role</th>
                       <th className="pb-2 pr-4 font-medium">Date of Birth</th>
-                      <th className="pb-2 pr-4 font-medium">Format</th>
                       <th className="pb-2 pr-4 font-medium">Level of Play</th>
-                      <th className="pb-2 font-medium">System Access</th>
+                      <th className="pb-2 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredUsers.map((user) => (
                       <tr key={user.userId} className="border-b last:border-0 align-top">
                         <td className="py-3 pr-4 font-medium text-foreground">{user.displayName}</td>
+                        <td className="py-3 pr-4 text-muted-foreground">{user.email || <span className="italic text-muted-foreground/50">loading…</span>}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(user.createdAt)}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatList(user.memberRoles)}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{formatDate(user.dateOfBirth)}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{formatList(user.formats)}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{user.experienceLevel || "—"}</td>
                         <td className="py-3">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <div className="flex flex-wrap gap-2 items-center">
                             <Badge variant={user.isSystemUser ? "default" : "secondary"}>
-                              {user.isSystemUser ? (user.role === "admin" ? "Admin" : "System user") : "Registered only"}
+                              {user.isSystemUser ? (user.role === "admin" ? "Admin" : "System user") : "Member"}
                             </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setEditUser(user)}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" /> Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setResetUser(user)}
+                            >
+                              <KeyRound className="mr-1 h-3 w-3" /> Password
+                            </Button>
                             <Button
                               size="sm"
                               variant={user.isSystemUser ? "outline" : "default"}
