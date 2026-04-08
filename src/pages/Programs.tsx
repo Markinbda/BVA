@@ -49,7 +49,9 @@ const Programs = () => {
           {programs.map((prog, i) => (
             <Card key={prog.title} className="group overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 opacity-0 animate-slide-up" style={{ animationDelay: `${i * 120}ms` }}>
               <div className="h-2 bg-accent" />
-              <img src={prog.image} alt={prog.title} className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <div className="h-48 overflow-hidden">
+                <img src={prog.image} alt={prog.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              </div>
               <CardHeader>
                 <CardTitle className="font-heading text-2xl uppercase">{prog.title}</CardTitle>
                 <p className="text-sm font-medium text-accent">{prog.subtitle}</p>

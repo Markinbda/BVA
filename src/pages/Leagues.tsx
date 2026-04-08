@@ -95,7 +95,9 @@ const Leagues = () => {
             {leagues.map((league, i) => (
               <Card key={league.title} className="group overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 opacity-0 animate-slide-up" style={{ animationDelay: `${200 + i * 120}ms` }}>
                 <div className="h-2 bg-accent" />
-                <img src={league.image} alt={league.title} className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                <div className="h-36 overflow-hidden">
+                  <img src={league.image} alt={league.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                </div>
                 <CardHeader>
                   <CardTitle className="font-heading text-xl uppercase">{league.title}</CardTitle>
                 </CardHeader>

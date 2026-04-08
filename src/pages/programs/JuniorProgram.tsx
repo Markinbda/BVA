@@ -12,8 +12,8 @@ const JuniorProgram = () => {
       <PageHeader title="Junior Program" subtitle="Developing Bermuda's next generation of volleyball players" />
       <div className="container mx-auto px-4 py-12">
         {/* Hero Image */}
-        <div className="mb-12 overflow-hidden rounded-lg">
-          <img src={placeholderJunior} alt="Junior volleyball program" className="h-64 w-full object-cover" />
+        <div className="mb-12 h-64 overflow-hidden rounded-lg">
+          <img src={placeholderJunior} alt="Junior volleyball program" className="h-full w-full object-cover" />
         </div>
 
         {/* Intro */}

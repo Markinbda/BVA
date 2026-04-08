@@ -20,8 +20,8 @@ const SummerLeague = () => {
       <PageHeader title="Summer League Registration" subtitle="Beach volleyball leagues — May through September" />
       <div className="container mx-auto px-4 py-12">
         {/* Hero Image */}
-        <div className="mb-12 overflow-hidden rounded-lg opacity-0 animate-fade-in">
-          <img src={placeholderBeach} alt="Summer beach volleyball" className="h-48 w-full object-cover" />
+        <div className="mb-12 h-48 overflow-hidden rounded-lg opacity-0 animate-fade-in">
+          <img src={placeholderBeach} alt="Summer beach volleyball" className="h-full w-full object-cover" />
         </div>
 
         {/* Instructions */}

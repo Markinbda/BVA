@@ -84,7 +84,9 @@ const Index = () => {
                 {displayNews.map((article: any, i: number) =>
                   <Link to={`/news/${article.id}`} key={article.id} className="group">
                     <Card className="overflow-hidden border-transparent shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 opacity-0 animate-slide-up" style={{ animationDelay: `${i * 120}ms` }}>
-                      <img src={article.image_url || placeholderNews} alt={article.title} className="h-36 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                      <div className="h-36 overflow-hidden">
+                        <img src={article.image_url || placeholderNews} alt={article.title} data-db-image="1" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                      </div>
                       <CardHeader className="pb-2">
                         <span className="text-[11px] font-bold uppercase tracking-widest text-accent">{article.category}</span>
                         <CardTitle className="font-heading text-lg leading-tight group-hover:text-accent transition-colors">{article.title}</CardTitle>

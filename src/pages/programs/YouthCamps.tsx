@@ -23,8 +23,8 @@ const YouthCamps = () => {
       <PageHeader title="Indoor Youth Camps" subtitle="Fun, skills, and volleyball for young athletes" />
       <div className="container mx-auto px-4 py-12">
         {/* Hero Image */}
-        <div className="mb-12 overflow-hidden rounded-lg opacity-0 animate-fade-in">
-          <img src={placeholderCamp} alt="Youth volleyball camp" className="h-64 w-full object-cover" />
+        <div className="mb-12 h-64 overflow-hidden rounded-lg opacity-0 animate-fade-in">
+          <img src={placeholderCamp} alt="Youth volleyball camp" className="h-full w-full object-cover" />
         </div>
 
         <div className="grid gap-8 lg:grid-cols-3">
