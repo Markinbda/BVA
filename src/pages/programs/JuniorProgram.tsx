@@ -36,7 +36,9 @@ const JuniorProgram = () => {
           {/* Paradise Hitters */}
           <Card className="group overflow-hidden transition-shadow hover:shadow-lg hover:-translate-y-1 duration-300">
             <div className="h-2 bg-accent" />
-            <img src={placeholderJunior} alt="Paradise Hitters" className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="h-48 overflow-hidden">
+              <img src={placeholderJunior} alt="Paradise Hitters" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            </div>
             <CardHeader>
               <CardTitle className="font-heading text-2xl uppercase">Paradise Hitters</CardTitle>
               <p className="text-sm font-medium text-accent">Girls' Volleyball Club</p>
@@ -63,7 +65,9 @@ const JuniorProgram = () => {
           {/* Big Wave Riders */}
           <Card className="group overflow-hidden transition-shadow hover:shadow-lg hover:-translate-y-1 duration-300">
             <div className="h-2 bg-accent" />
-            <img src={placeholderJunior} alt="Big Wave Riders" className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="h-48 overflow-hidden">
+              <img src={placeholderJunior} alt="Big Wave Riders" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            </div>
             <CardHeader>
               <CardTitle className="font-heading text-2xl uppercase">Big Wave Riders</CardTitle>
               <p className="text-sm font-medium text-accent">Boys' Volleyball Club</p>

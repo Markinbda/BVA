@@ -90,6 +90,15 @@ const InlineEditManager = () => {
   // Load and apply the latest published changes for the current page
   useEffect(() => {
     const pagePath = location.pathname;
+
+    // Never apply saved overrides to dynamic content pages — they fetch directly from DB
+    const isDynamicPage = /^\/(news|events|programs|leagues|gallery)\/[^/]+/.test(pagePath);
+
+    // Clear old overrides from previous page
+    selectorOverridesRef.current.clear();
+
+    if (isDynamicPage) return;
+
     const load = async () => {
       const { data } = await (supabase as any)
         .from("content_edit_versions")
