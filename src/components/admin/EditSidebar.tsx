@@ -208,6 +208,83 @@ const EditSidebar = () => {
     if (!editMode) setSelected(null);
   }, [editMode, open, location.pathname, scanPage]);
 
+  // ── Click-to-edit: clicking any element in edit mode opens sidebar ─────────
+  useEffect(() => {
+    if (!editMode) return;
+
+    const TEXT_SELECTOR = TEXT_TAGS.map((t) => `body ${t.toLowerCase()}`).join(",");
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target) return;
+
+      // Don't intercept sidebar itself
+      if (target.closest(".inline-edit-sidebar")) return;
+
+      // Match text element
+      const textEl = target.closest(TEXT_SELECTOR) as HTMLElement | null;
+      const imgEl = target instanceof HTMLImageElement ? target : target.closest("img") as HTMLImageElement | null;
+
+      let matched: EditableItem | null = null;
+
+      if (imgEl && !shouldSkip(imgEl) && imgEl.width >= 50 && imgEl.height >= 50) {
+        e.preventDefault();
+        e.stopPropagation();
+        const selector = getSelector(imgEl);
+        matched = {
+          uid: `click-img-${Date.now()}`,
+          type: "image",
+          label: imgEl.alt || imgEl.src.split("/").pop() || "Image",
+          selector,
+          currentValue: imgEl.src,
+          element: imgEl,
+        };
+      } else if (textEl && !shouldSkip(textEl)) {
+        const text = textEl.textContent?.trim() ?? "";
+        if (text.length >= 2) {
+          e.preventDefault();
+          e.stopPropagation();
+          const selector = getSelector(textEl);
+          matched = {
+            uid: `click-text-${Date.now()}`,
+            type: "text",
+            label: text.slice(0, 60) + (text.length > 60 ? "…" : ""),
+            selector,
+            currentValue: textEl.innerHTML,
+            element: textEl,
+          };
+        }
+      }
+
+      if (matched) {
+        // Open sidebar and scan if not already open
+        setOpen(true);
+        if (items.length === 0) {
+          setTimeout(() => {
+            scanPage();
+          }, 200);
+        }
+        // Select the clicked item
+        setSelected(matched);
+        setTextDraft(matched.currentValue);
+        setImagePreview(matched.currentValue);
+        setImageFile(null);
+      }
+    };
+
+    // Add edit-mode cursor style
+    const style = document.createElement("style");
+    style.id = "edit-mode-cursor";
+    style.textContent = `body *:not(.inline-edit-sidebar):not(.inline-edit-sidebar *) { cursor: crosshair !important; }`;
+    document.head.appendChild(style);
+
+    document.addEventListener("click", handleClick, true);
+    return () => {
+      document.removeEventListener("click", handleClick, true);
+      document.getElementById("edit-mode-cursor")?.remove();
+    };
+  }, [editMode, items.length, scanPage]);
+
   // ── Highlight selected element on page ────────────────────────────────────
   useEffect(() => {
     // Remove old highlight

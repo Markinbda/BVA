@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import bvaLogo from "@/assets/bva-logo.jpg";
 import heroBeachTournament from "@/assets/Splash screen/Mens Beach.jpg";
 import heroNationalBeach from "@/assets/Splash screen/BVA-Early.jpg";
@@ -10,54 +11,50 @@ import heroMensNational from "@/assets/Splash screen/Boys Team.jpg";
 import heroWomensNational from "@/assets/Splash screen/hero-womens-national.jpeg";
 import heroGrassIndoor from "@/assets/Splash screen/placeholder-camp.jpg";
 
-const slides = [
-  {
-    image: heroBeachTournament,
-    title: "Beach, Grass & Indoor",
-    subtitle: "Tournaments",
-    description: "Compete across all formats of volleyball in Bermuda",
-    link: "/leagues",
-  },
-  {
-    image: heroNationalBeach,
-    title: "National Beach",
-    subtitle: "Program",
-    description: "Representing Bermuda on the international beach circuit",
-    link: "/programs/senior",
-  },
-  {
-    image: heroJuniorWomen,
-    title: "Junior Women's",
-    subtitle: "Indoor",
-    description: "Developing the next generation of female volleyball talent",
-    link: "/programs/junior/girls",
-  },
-  {
-    image: heroMensNational,
-    title: "Men's National",
-    subtitle: "Team",
-    description: "Bermuda's elite men competing on the world stage",
-    link: "/programs/senior/mens",
-  },
-  {
-    image: heroWomensNational,
-    title: "Women's National",
-    subtitle: "Team",
-    description: "Pride, passion and power — Bermuda's women's volleyball",
-    link: "/programs/senior/womens",
-  },
-  {
-    image: heroGrassIndoor,
-    title: "Grass & Indoor",
-    subtitle: "Leagues",
-    description: "Year-round competitive and recreational league play",
-    link: "/leagues",
-  },
+interface SlideData {
+  image: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  link: string;
+}
+
+const FALLBACK_SLIDES: SlideData[] = [
+  { image: heroBeachTournament, title: "Beach, Grass & Indoor", subtitle: "Tournaments", description: "Compete across all formats of volleyball in Bermuda", link: "/leagues" },
+  { image: heroNationalBeach, title: "National Beach", subtitle: "Program", description: "Representing Bermuda on the international beach circuit", link: "/programs/senior" },
+  { image: heroJuniorWomen, title: "Junior Women's", subtitle: "Indoor", description: "Developing the next generation of female volleyball talent", link: "/programs/junior/girls" },
+  { image: heroMensNational, title: "Men's National", subtitle: "Team", description: "Bermuda's elite men competing on the world stage", link: "/programs/senior/mens" },
+  { image: heroWomensNational, title: "Women's National", subtitle: "Team", description: "Pride, passion and power — Bermuda's women's volleyball", link: "/programs/senior/womens" },
+  { image: heroGrassIndoor, title: "Grass & Indoor", subtitle: "Leagues", description: "Year-round competitive and recreational league play", link: "/leagues" },
 ];
 
 const HeroSlider = () => {
+  const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [current, setCurrent] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Load slides from Supabase; fall back to hardcoded defaults
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await (supabase as any)
+        .from("hero_slides")
+        .select("image_url, title, subtitle, description, link")
+        .eq("enabled", true)
+        .order("sort_order");
+      if (data && data.length > 0) {
+        setSlides(
+          data.map((s: any, i: number) => ({
+            image: s.image_url || FALLBACK_SLIDES[i % FALLBACK_SLIDES.length].image,
+            title: s.title,
+            subtitle: s.subtitle,
+            description: s.description,
+            link: s.link,
+          }))
+        );
+      }
+    };
+    load();
+  }, []);
 
   const goTo = useCallback(
     (index: number) => {

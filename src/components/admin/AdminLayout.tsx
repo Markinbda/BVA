@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
   Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
-  Tag, MapPin, ClipboardList
+  Tag, MapPin, ClipboardList, SlidersHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -20,6 +20,7 @@ const navItems = [
   { path: "/admin/gallery-categories", label: "Gallery Categories", icon: Tag, permission: "manage_gallery" },
   { path: "/admin/images", label: "Image Manager", icon: ImagePlus, permission: "manage_images" },
   { path: "/admin/pages", label: "Page Content", icon: FileText, permission: "manage_pages" },
+  { path: "/admin/hero-slides", label: "Homepage Slider", icon: SlidersHorizontal, permission: "manage_pages" },
   { path: "/admin/sponsors", label: "Sponsors", icon: Heart, permission: "manage_sponsors" },
   { path: "/admin/leagues", label: "Leagues", icon: Trophy, permission: "manage_leagues" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },

@@ -32,6 +32,7 @@ import AdminEvents from "./pages/admin/AdminEvents";
 import AdminGallery from "./pages/admin/AdminGallery";
 import AdminImageManager from "./pages/admin/AdminImageManager";
 import AdminPages from "./pages/admin/AdminPages";
+import AdminHeroSlides from "./pages/admin/AdminHeroSlides";
 import AdminSponsors from "./pages/admin/AdminSponsors";
 import AdminResetPassword from "./pages/admin/AdminResetPassword";
 import AdminSettings from "./pages/admin/AdminSettings";
@@ -125,6 +126,7 @@ const App = () => (
             <Route path="/admin/gallery" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGallery /></AdminRoute>} />
             <Route path="/admin/images" element={<AdminRoute requiredPermissions={["manage_images", "manage_pages"]}><AdminImageManager /></AdminRoute>} />
             <Route path="/admin/pages" element={<AdminRoute requiredPermissions={["manage_pages"]}><AdminPages /></AdminRoute>} />
+            <Route path="/admin/hero-slides" element={<AdminRoute requiredPermissions={["manage_pages"]}><AdminHeroSlides /></AdminRoute>} />
             <Route path="/admin/sponsors" element={<AdminRoute requiredPermissions={["manage_sponsors"]}><AdminSponsors /></AdminRoute>} />
             <Route path="/admin/settings" element={<AdminRoute requiredPermissions={["manage_settings"]}><AdminSettings /></AdminRoute>} />
             <Route path="/admin/import" element={<AdminRoute requiredPermissions={["manage_import"]}><AdminImport /></AdminRoute>} />
