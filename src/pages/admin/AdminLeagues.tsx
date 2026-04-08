@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useRef } from "react";
+﻿import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Trash2, ArrowRight, Trophy, ChevronUp, ChevronDown,
-  Users, UserPlus, X,
+  Users, UserPlus, X, GripVertical,
 } from "lucide-react";
 import { generateRoundRobin } from "@/lib/leagueUtils";
 
@@ -158,29 +158,47 @@ interface TeamTileProps {
   isFirstRung: boolean;
   isLastRung: boolean;
   expanded: boolean;
+  draggingId: string | null;
+  dragOverId: string | null;
   onToggle: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDelete: () => void;
+  onDragStart: (id: string) => void;
+  onDragEnter: (id: string) => void;
+  onDragEnd: () => void;
 }
 
-const TeamTile = ({ team, isFirst, isLast, isFirstRung, isLastRung, expanded, onToggle, onMoveUp, onMoveDown, onDelete }: TeamTileProps) => {
-  const dragStarted = useRef(false);
-  const handleMouseDown = () => { dragStarted.current = false; };
-  const handleMouseMove = () => { dragStarted.current = true; };
-  const handleClick = () => { if (!dragStarted.current) onToggle(); };
+const TeamTile = ({ team, isFirst, isLast, isFirstRung, isLastRung, expanded, draggingId, dragOverId, onToggle, onMoveUp, onMoveDown, onDelete, onDragStart, onDragEnter, onDragEnd }: TeamTileProps) => {
+  const isDragging = draggingId === team.id;
+  const isDragOver = dragOverId === team.id && draggingId !== team.id;
 
   return (
-    <div className={`rounded-lg border transition-all select-none ${expanded ? "border-primary/60 bg-primary/5 shadow-md" : "border-border bg-card hover:border-primary/30 hover:shadow-sm"}`}>
-      <div
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onClick={handleClick}
-      >
-        <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; onDragStart(team.id); }}
+      onDragEnter={() => onDragEnter(team.id)}
+      onDragOver={(e) => e.preventDefault()}
+      onDragEnd={onDragEnd}
+      className={`rounded-lg border transition-all select-none ${
+        isDragging ? "opacity-40 scale-[0.98] border-dashed border-primary" :
+        isDragOver ? "border-primary ring-2 ring-primary/40 bg-primary/5" :
+        expanded ? "border-primary/60 bg-primary/5 shadow-md" :
+        "border-border bg-card hover:border-primary/30 hover:shadow-sm"
+      }`}
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Drag handle */}
+        <div
+          className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground"
+          title="Drag to reorder"
+        >
+          <GripVertical className="h-5 w-5" />
+        </div>
+        {/* Up/Down arrow buttons */}
+        <div className="flex flex-col gap-0.5 shrink-0">
           <button
-            onClick={onMoveUp}
+            onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
             disabled={isFirst && isFirstRung}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             title={isFirst && !isFirstRung ? "Promote to rung above" : "Move up"}
@@ -188,7 +206,7 @@ const TeamTile = ({ team, isFirst, isLast, isFirstRung, isLastRung, expanded, on
             <ChevronUp className="h-4 w-4" />
           </button>
           <button
-            onClick={onMoveDown}
+            onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
             disabled={isLast && isLastRung}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
             title={isLast && !isLastRung ? "Demote to rung below" : "Move down"}
@@ -196,7 +214,8 @@ const TeamTile = ({ team, isFirst, isLast, isFirstRung, isLastRung, expanded, on
             <ChevronDown className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 min-w-0">
+        {/* Team name — click to expand */}
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={onToggle}>
           <p className="font-semibold text-foreground truncate">{team.team_name}</p>
           <p className="text-[11px] text-muted-foreground">Click to {expanded ? "hide" : "view"} roster</p>
         </div>
@@ -233,6 +252,37 @@ const AdminLeagues = () => {
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const handleDragEnd = useCallback(async () => {
+    const fromId = draggingId;
+    const toId = dragOverId;
+    setDraggingId(null);
+    setDragOverId(null);
+    if (!fromId || !toId || fromId === toId) return;
+
+    const fromTeam = rawTeams.find((t) => t.id === fromId);
+    const toTeam = rawTeams.find((t) => t.id === toId);
+    if (!fromTeam || !toTeam) return;
+
+    const sameRung = fromTeam.current_rung === toTeam.current_rung;
+
+    if (sameRung) {
+      // Swap sort_order within same rung
+      await Promise.all([
+        supabase.from("league_teams").update({ sort_order: toTeam.sort_order }).eq("id", fromId),
+        supabase.from("league_teams").update({ sort_order: fromTeam.sort_order }).eq("id", toId),
+      ]);
+    } else {
+      // Move to dropped-on team's rung, insert at that sort position
+      await supabase.from("league_teams").update({
+        current_rung: toTeam.current_rung,
+        sort_order: toTeam.sort_order,
+      }).eq("id", fromId);
+    }
+    queryClient.invalidateQueries({ queryKey: ["league_teams"] });
+  }, [draggingId, dragOverId, rawTeams, queryClient]);
 
   const { data: seasons = [] } = useQuery<Season[]>({
     queryKey: ["league_seasons"],
@@ -491,9 +541,14 @@ const AdminLeagues = () => {
                             isFirstRung={rung === 1}
                             isLastRung={rung === maxRung}
                             expanded={expandedTeamId === team.id}
+                            draggingId={draggingId}
+                            dragOverId={dragOverId}
                             onToggle={() => setExpandedTeamId(expandedTeamId === team.id ? null : team.id)}
                             onMoveUp={() => moveTeam(team, "up")}
                             onMoveDown={() => moveTeam(team, "down")}
+                            onDragStart={(id) => setDraggingId(id)}
+                            onDragEnter={(id) => setDragOverId(id)}
+                            onDragEnd={handleDragEnd}
                             onDelete={() => {
                               if (confirm(`Delete "${team.team_name}"? This also removes their match history.`)) {
                                 deleteTeam.mutate(team.id);
