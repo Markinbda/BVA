@@ -22,7 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, AlertCircle } from "lucide-react";
 
 const POSITIONS = ["Setter", "Libero", "Outside Hitter", "Opposite Hitter", "Middle Blocker", "Defensive Specialist"];
 
@@ -53,10 +53,16 @@ const emptyForm = (): Omit<Player, "id"> => ({
   notes: "",
 });
 
+interface Team {
+  id: string;
+  name: string;
+}
+
 const CoachPlayers = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -67,13 +73,13 @@ const CoachPlayers = () => {
   const fetchPlayers = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("coach_players")
-      .select("*")
-      .eq("coach_id", user.id)
-      .order("last_name");
-    if (error) toast({ title: "Failed to load players", description: error.message, variant: "destructive" });
-    setPlayers(data ?? []);
+    const [playersRes, teamsRes] = await Promise.all([
+      (supabase as any).from("coach_players").select("*").eq("coach_id", user.id).order("last_name"),
+      (supabase as any).from("coach_teams").select("id, name").eq("coach_id", user.id).order("name"),
+    ]);
+    if (playersRes.error) toast({ title: "Failed to load players", description: playersRes.error.message, variant: "destructive" });
+    setPlayers(playersRes.data ?? []);
+    setTeams(teamsRes.data ?? []);
     setLoading(false);
   };
 
@@ -244,9 +250,22 @@ const CoachPlayers = () => {
               <Label>Last Name *</Label>
               <Input value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} />
             </div>
-            <div className="space-y-1">
-              <Label>Team (e.g. U14, Varsity)</Label>
-              <Input value={form.team} onChange={(e) => setForm((f) => ({ ...f, team: e.target.value }))} />
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Team</Label>
+              {teams.length === 0 ? (
+                <div className="flex items-center gap-2 rounded-md border border-dashed border-amber-400 bg-amber-50 dark:bg-amber-950/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>No teams yet. <a href="/coach/teams" className="underline font-medium">Create a team first</a>, then come back to assign players.</span>
+                </div>
+              ) : (
+                <Select value={form.team || "none"} onValueChange={(v) => setForm((f) => ({ ...f, team: v === "none" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select a team" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— No team —</SelectItem>
+                    {teams.map((t) => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-1">
               <Label>Position</Label>
