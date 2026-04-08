@@ -91,9 +91,9 @@ const CoachTeams = () => {
     setEditingId(null);
     setFormName("");
     setFormDesc("");
-    setFormYear("");
-    setFormGender("");
-    setFormAgeGroup("");
+    setFormYear("none");
+    setFormGender("none");
+    setFormAgeGroup("none");
     setDialogOpen(true);
   };
 
@@ -101,9 +101,9 @@ const CoachTeams = () => {
     setEditingId(team.id);
     setFormName(team.name);
     setFormDesc(team.description ?? "");
-    setFormYear(team.season_year ? String(team.season_year) : "");
-    setFormGender(team.gender ?? "");
-    setFormAgeGroup(team.age_group ?? "");
+    setFormYear(team.season_year ? String(team.season_year) : "none");
+    setFormGender(team.gender ?? "none");
+    setFormAgeGroup(team.age_group ?? "none");
     setDialogOpen(true);
   };
 
@@ -117,9 +117,9 @@ const CoachTeams = () => {
       coach_id: user.id,
       name: formName.trim(),
       description: formDesc.trim() || null,
-      season_year: formYear ? Number(formYear) : null,
-      gender: formGender || null,
-      age_group: formAgeGroup || null,
+      season_year: formYear && formYear !== "none" ? Number(formYear) : null,
+      gender: formGender && formGender !== "none" ? formGender : null,
+      age_group: formAgeGroup && formAgeGroup !== "none" ? formAgeGroup : null,
     };
     let error;
     if (editingId) {
@@ -329,7 +329,7 @@ const CoachTeams = () => {
                 <Select value={formYear} onValueChange={setFormYear}>
                   <SelectTrigger><SelectValue placeholder="Year" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">—</SelectItem>
+                    <SelectItem value="none">—</SelectItem>
                     {YEAR_OPTIONS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -339,7 +339,7 @@ const CoachTeams = () => {
                 <Select value={formGender} onValueChange={setFormGender}>
                   <SelectTrigger><SelectValue placeholder="Gender" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">—</SelectItem>
+                    <SelectItem value="none">—</SelectItem>
                     {GENDER_OPTIONS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -349,7 +349,7 @@ const CoachTeams = () => {
                 <Select value={formAgeGroup} onValueChange={setFormAgeGroup}>
                   <SelectTrigger><SelectValue placeholder="Group" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">—</SelectItem>
+                    <SelectItem value="none">—</SelectItem>
                     {AGE_GROUP_OPTIONS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
                   </SelectContent>
                 </Select>
