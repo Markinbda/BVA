@@ -14,17 +14,12 @@ CREATE TABLE IF NOT EXISTS public.hero_slides (
 
 ALTER TABLE public.hero_slides ENABLE ROW LEVEL SECURITY;
 
--- Admins / content editors can manage slides
+-- Admins can manage slides
 CREATE POLICY "Admins can manage hero_slides"
   ON public.hero_slides
   FOR ALL
   TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.user_roles
-      WHERE user_id = auth.uid() AND role IN ('admin', 'content_editor')
-    )
-  );
+  USING (public.has_role(auth.uid(), 'admin'::app_role));
 
 -- Everyone can read enabled slides
 CREATE POLICY "Public can read enabled hero_slides"
