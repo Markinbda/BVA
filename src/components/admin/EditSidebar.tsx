@@ -45,14 +45,22 @@ interface EditableItem {
 }
 
 // ── Stable CSS selector from element ────────────────────────────────────────
+const safeEscape = (value: string) => {
+  try { return CSS.escape(value); } catch { return value.replace(/[^a-zA-Z0-9_-]/g, "_"); }
+};
+
 const getSelector = (element: Element): string => {
-  if (element.id) return `#${element.id}`;
+  if (element.id) return `#${safeEscape(element.id)}`;
   const parts: string[] = [];
   let el: Element | null = element;
   while (el && el.tagName !== "HTML") {
     let part = el.tagName.toLowerCase();
-    if (el.id) { parts.unshift(`#${el.id}`); break; }
-    if (el.classList.length > 0) part += `.${Array.from(el.classList)[0]}`;
+    if (el.id) { parts.unshift(`#${safeEscape(el.id)}`); break; }
+    // Only use first class if it contains only safe characters
+    const firstClass = Array.from(el.classList)[0];
+    if (firstClass && /^[a-zA-Z0-9_-]+$/.test(firstClass)) {
+      part += `.${firstClass}`;
+    }
     const parent = el.parentElement;
     if (parent) {
       const siblings = Array.from(parent.children).filter((s) => s.tagName === el!.tagName);
@@ -62,6 +70,10 @@ const getSelector = (element: Element): string => {
     el = el.parentElement;
   }
   return parts.join(" > ");
+};
+
+const safeQuerySelector = <T extends Element>(selector: string): T | null => {
+  try { return document.querySelector<T>(selector); } catch { return null; }
 };
 
 const parseStoragePath = (src: string) => {
@@ -101,7 +113,7 @@ const EditSidebar = () => {
   // ── Apply DOM changes ──────────────────────────────────────────────────────
   const applyChangesToDom = useCallback((changesToApply: EditChange[]) => {
     changesToApply.forEach((change) => {
-      const el = document.querySelector(change.selector);
+      const el = safeQuerySelector(change.selector);
       if (!el) return;
       if (change.type === "text") (el as HTMLElement).innerHTML = change.updated;
       if (change.type === "image" && el instanceof HTMLImageElement) {
@@ -148,7 +160,7 @@ const EditSidebar = () => {
   useEffect(() => {
     registerRevertHandler((changesToRevert) => {
       changesToRevert.forEach((c) => {
-        const el = document.querySelector(c.selector);
+        const el = safeQuerySelector(c.selector);
         if (!el) return;
         if (c.type === "text") (el as HTMLElement).innerHTML = c.original;
         if (c.type === "image" && el instanceof HTMLImageElement) {
@@ -269,7 +281,7 @@ const EditSidebar = () => {
         // Select the clicked item
         setSelected(matched);
         setTextDraft(matched.currentValue);
-        setImagePreview(matched.currentValue);
+        setImagePreview(matched.type === "image" ? matched.currentValue : null);
         setImageFile(null);
       }
     };
@@ -295,7 +307,7 @@ const EditSidebar = () => {
       highlightRef.current = null;
     }
     if (!selected) return;
-    const target = document.querySelector(selected.selector);
+    const target = safeQuerySelector(selected.selector);
     if (!target) return;
 
     const rect = target.getBoundingClientRect();
@@ -335,7 +347,7 @@ const EditSidebar = () => {
   // ── Select an item ─────────────────────────────────────────────────────────
   const selectItem = (item: EditableItem) => {
     // Refresh current value from DOM
-    const liveEl = document.querySelector(item.selector);
+    const liveEl = safeQuerySelector(item.selector);
     const currentValue = item.type === "text"
       ? (liveEl as HTMLElement | null)?.innerHTML ?? item.currentValue
       : (liveEl instanceof HTMLImageElement ? liveEl.src : item.currentValue);
@@ -343,14 +355,14 @@ const EditSidebar = () => {
     const refreshed = { ...item, currentValue };
     setSelected(refreshed);
     setTextDraft(currentValue);
-    setImagePreview(currentValue);
+    setImagePreview(item.type === "image" ? currentValue : null);
     setImageFile(null);
   };
 
   // ── Save text change ───────────────────────────────────────────────────────
   const applyTextChange = () => {
     if (!selected) return;
-    const el = document.querySelector(selected.selector) as HTMLElement | null;
+    const el = safeQuerySelector<HTMLElement>(selected.selector);
     if (!el) return;
     const original = el.innerHTML;
     el.innerHTML = textDraft;
@@ -379,13 +391,13 @@ const EditSidebar = () => {
   const applyImageChange = async () => {
     if (!selected || !imageFile) return;
     setImageSaving(true);
-    const oldSrc = (document.querySelector(selected.selector) as HTMLImageElement)?.src ?? selected.currentValue;
+    const oldSrc = safeQuerySelector<HTMLImageElement>(selected.selector)?.src ?? selected.currentValue;
     const path = parseStoragePath(oldSrc) || `inline-edits/${Date.now()}.${imageFile.name.split(".").pop()}`;
     const { error: uploadErr } = await supabase.storage.from("bva-images").upload(path, imageFile, { upsert: true });
     if (uploadErr) { alert(`Upload failed: ${uploadErr.message}`); setImageSaving(false); return; }
     const { data } = supabase.storage.from("bva-images").getPublicUrl(path);
     const newUrl = data.publicUrl;
-    const el = document.querySelector(selected.selector) as HTMLImageElement | null;
+    const el = safeQuerySelector<HTMLImageElement>(selected.selector);
     if (el) { el.src = newUrl; selectorOverridesRef.current.set(selected.selector, newUrl); }
     addChange({
       id: `${selected.selector}-${Date.now()}`,
@@ -404,8 +416,8 @@ const EditSidebar = () => {
   // ── Apply gallery-picked image directly ────────────────────────────────────
   const applyGalleryImage = (url: string) => {
     if (!selected) return;
-    const oldSrc = (document.querySelector(selected.selector) as HTMLImageElement)?.src ?? selected.currentValue;
-    const el = document.querySelector(selected.selector) as HTMLImageElement | null;
+    const oldSrc = safeQuerySelector<HTMLImageElement>(selected.selector)?.src ?? selected.currentValue;
+    const el = safeQuerySelector<HTMLImageElement>(selected.selector);
     if (el) { el.src = url; selectorOverridesRef.current.set(selected.selector, url); }
     addChange({
       id: `${selected.selector}-${Date.now()}`,
