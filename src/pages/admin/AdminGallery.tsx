@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown, Tag } from "lucide-react";
+import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown, Tag, Pencil } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface GalleryPhoto {
@@ -40,6 +40,8 @@ const AdminGallery = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortOrder, setSortOrder] = useState<"default" | "newest" | "oldest">("default");
   const [galleryCategories, setGalleryCategories] = useState<GalleryCategory[]>([]);
+  const [editPhoto, setEditPhoto] = useState<GalleryPhoto | null>(null);
+  const [editForm, setEditForm] = useState({ category: "", alt: "", image_url: "", sort_order: 0 });
   const { toast } = useToast();
 
   // Bulk import state
@@ -104,6 +106,25 @@ const AdminGallery = () => {
     toast({ title: "Photo added!" });
     setAdding(false);
     setNewPhoto({ category: "General", alt: "", image_url: "", sort_order: 0 });
+    fetchPhotos();
+  };
+
+  const openEdit = (photo: GalleryPhoto) => {
+    setEditPhoto(photo);
+    setEditForm({ category: photo.category, alt: photo.alt ?? "", image_url: photo.image_url, sort_order: photo.sort_order });
+  };
+
+  const handleEditSave = async () => {
+    if (!editPhoto) return;
+    const { error } = await supabase.from("gallery_photos").update({
+      category: editForm.category,
+      alt: editForm.alt || null,
+      image_url: editForm.image_url,
+      sort_order: editForm.sort_order,
+    }).eq("id", editPhoto.id);
+    if (error) { toast({ title: "Error", description: error.message, variant: "destructive" }); return; }
+    toast({ title: "Photo updated!" });
+    setEditPhoto(null);
     fetchPhotos();
   };
 
@@ -326,6 +347,7 @@ const AdminGallery = () => {
                   <div key={p.id} className="group relative cursor-pointer" onClick={() => setLightboxIndex(globalIndex)}>
                     <img src={p.image_url} alt={p.alt || ""} className="w-full h-40 object-cover rounded-lg border border-border" />
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEdit(p); }}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1 truncate">{p.category}{p.alt ? ` — ${p.alt}` : ""}</p>
@@ -349,6 +371,44 @@ const AdminGallery = () => {
           </>
         )}
       </div>
+
+      {/* Edit Photo Dialog */}
+      <Dialog open={!!editPhoto} onOpenChange={(open) => { if (!open) setEditPhoto(null); }}>
+        <DialogContent className="max-w-lg">
+          <h2 className="text-lg font-semibold mb-4">Edit Photo</h2>
+          <div className="space-y-4">
+            <ImageUpload
+              value={editForm.image_url}
+              onChange={(url) => setEditForm({ ...editForm, image_url: url })}
+              folder="gallery"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Category</label>
+                <Select value={editForm.category} onValueChange={(v) => setEditForm({ ...editForm, category: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {galleryCategories.map((c) => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                    {galleryCategories.length === 0 && <SelectItem value="General">General</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1.5">Description</label>
+                <Input value={editForm.alt} onChange={(e) => setEditForm({ ...editForm, alt: e.target.value })} placeholder="Photo description" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1.5">Sort Order</label>
+              <Input type="number" value={editForm.sort_order} onChange={(e) => setEditForm({ ...editForm, sort_order: parseInt(e.target.value) || 0 })} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditPhoto(null)}>Cancel</Button>
+              <Button onClick={handleEditSave}><Save className="h-4 w-4 mr-2" /> Save Changes</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Lightbox */}
       <Dialog open={lightboxIndex !== null} onOpenChange={() => setLightboxIndex(null)}>
