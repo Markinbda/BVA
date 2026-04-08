@@ -10,7 +10,7 @@ type Member = {
 };
 
 const board: Member[] = [
-  { name: "Juanita Blee", role: "Chairman & Director" },
+  { name: "Juanita Blee", role: "Chairman & Director", photo: "/executives/Juanita_Bless.jpeg" },
   { name: "Lisa LeBlanc", role: "Co-President & Director", photo: "/executives/Lisa_Leblanc.jpeg" },
   { name: "Brandon Sousa", role: "Co-President & Director", photo: "/executives/Brandon_Sousa.jpg" },
   { name: "Amy Chan", role: "Past President & Director", photo: "/executives/Amy_Chan.jpeg" },
