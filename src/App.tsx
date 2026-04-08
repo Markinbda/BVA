@@ -43,8 +43,7 @@ import AdminSeasons from "./pages/admin/AdminSeasons";
 import AdminEventCategories from "./pages/admin/AdminEventCategories";
 import AdminGalleryCategories from "./pages/admin/AdminGalleryCategories";
 import AdminEventLocations from "./pages/admin/AdminEventLocations";
-import InlineEditManager from "@/components/admin/InlineEditManager";
-import InlineEditToolbar from "@/components/admin/InlineEditToolbar";
+import EditSidebar from "@/components/admin/EditSidebar";
 import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
 import MemberRegistration from "./pages/MemberRegistration";
 import ProfileDashboard from "./pages/ProfileDashboard";
@@ -180,8 +179,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
-          <InlineEditManager />
-          <InlineEditToolbar />
+          <EditSidebar />
         </AdminEditModeProvider>
       </AuthProvider>
     </BrowserRouter>
