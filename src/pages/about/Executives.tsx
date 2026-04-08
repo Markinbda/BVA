@@ -11,14 +11,14 @@ type Member = {
 
 const board: Member[] = [
   { name: "Juanita Blee", role: "Chairman & Director" },
-  { name: "Lisa LeBlanc", role: "Co-President & Director" },
+  { name: "Lisa LeBlanc", role: "Co-President & Director", photo: "/executives/Lisa_Leblanc.jpeg" },
   { name: "Brandon Sousa", role: "Co-President & Director", photo: "/executives/Brandon_Sousa.jpg" },
-  { name: "Amy Chan", role: "Past President & Director" },
-  { name: "Lori Gazzard", role: "Director" },
+  { name: "Amy Chan", role: "Past President & Director", photo: "/executives/Amy_Chan.jpeg" },
+  { name: "Lori Gazzard", role: "Director", photo: "/executives/Lori_Gazzard.jpeg" },
 ];
 
 const executive: Member[] = [
-  { name: "Lisa LeBlanc", role: "Co-President" },
+  { name: "Lisa LeBlanc", role: "Co-President", photo: "/executives/Lisa_Leblanc.jpeg" },
   { name: "Brandon Sousa", role: "Co-President", photo: "/executives/Brandon_Sousa.jpg" },
   { name: "Megan Woods", role: "Secretary" },
   { name: "Teresa Gallant", role: "Treasurer" },
