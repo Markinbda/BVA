@@ -146,6 +146,7 @@ const AdoptAnAthlete = () => {
       </div>
         </div>{/* /relative z-10 */}
       </div>{/* /relative outer */}
+    </Layout>
   );
 };
 
