@@ -38,7 +38,9 @@ const Gallery = () => {
     },
   });
 
-  const displayPhotos = photos?.length ? photos : fallbackPhotos;
+  // "General" is a staging folder — visible in admin but not on the public gallery
+  const rawPhotos = photos?.length ? photos : fallbackPhotos;
+  const displayPhotos = rawPhotos.filter((p: any) => p.category !== "General");
   const categories = ["All", ...Array.from(new Set(displayPhotos.map((p: any) => p.category)))];
   const filtered = useMemo(() => {
     let result = activeCategory === "All" ? displayPhotos : displayPhotos.filter((p: any) => p.category === activeCategory);

@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown, Tag, Pencil } from "lucide-react";
+import { Plus, Trash2, X, Save, Upload, FolderOpen, Search, ChevronLeft, ChevronRight, ArrowUpDown, Tag, Pencil, ScanLine, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface GalleryPhoto {
@@ -44,6 +44,8 @@ const AdminGallery = () => {
   const [editForm, setEditForm] = useState({ category: "", alt: "", image_url: "", sort_order: 0 });
   const { toast } = useToast();
 
+  const [scanning, setScanning] = useState(false);
+
   // Bulk import state
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkCategory, setBulkCategory] = useState("WordPress Archive");
@@ -63,6 +65,56 @@ const AdminGallery = () => {
     const { data } = await (supabase as any)
       .from("gallery_categories").select("*").order("sort_order", { ascending: true });
     setGalleryCategories(data ?? []);
+  };
+
+  const isLikelyDirectory = (name: string) => !/\.[^./]+$/.test(name);
+
+  const listBucketFiles = async (path = ""): Promise<string[]> => {
+    const { data, error } = await supabase.storage.from("bva-images").list(path, { limit: 1000 });
+    if (error || !data) return [];
+    const urls: string[] = [];
+    for (const item of data) {
+      const itemPath = path ? `${path}/${item.name}` : item.name;
+      if (isLikelyDirectory(item.name)) {
+        urls.push(...(await listBucketFiles(itemPath)));
+      } else if (!itemPath.startsWith("versions/")) {
+        const { data: { publicUrl } } = supabase.storage.from("bva-images").getPublicUrl(itemPath);
+        urls.push(publicUrl);
+      }
+    }
+    return urls;
+  };
+
+  const handleScanStorage = async () => {
+    setScanning(true);
+    try {
+      const [allUrls, existingData] = await Promise.all([
+        listBucketFiles(),
+        supabase.from("gallery_photos").select("image_url"),
+      ]);
+      const existingUrls = new Set((existingData.data ?? []).map((r: any) => r.image_url));
+      const newUrls = allUrls.filter((url) => !existingUrls.has(url));
+      if (newUrls.length === 0) {
+        toast({ title: "All images already registered", description: "No new images found in storage." });
+        setScanning(false);
+        return;
+      }
+      const rows = newUrls.map((url) => ({
+        category: "General",
+        alt: url.split("/").pop()?.replace(/[_-]/g, " ").replace(/\.[^.]+$/, "") ?? "",
+        image_url: url,
+        sort_order: 0,
+      }));
+      const { error } = await supabase.from("gallery_photos").insert(rows);
+      if (error) {
+        toast({ title: "Scan failed", description: error.message, variant: "destructive" });
+      } else {
+        toast({ title: `${newUrls.length} image${newUrls.length !== 1 ? "s" : ""} added to General`, description: "Move them to other categories as needed." });
+        fetchPhotos();
+      }
+    } finally {
+      setScanning(false);
+    }
   };
 
   useEffect(() => { fetchPhotos(); fetchCategories(); }, []);
@@ -223,6 +275,9 @@ const AdminGallery = () => {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" asChild>
               <Link to="/admin/gallery-categories"><Tag className="h-4 w-4 mr-2" /> Categories</Link>
+            </Button>
+            <Button variant="outline" onClick={handleScanStorage} disabled={scanning}>
+              {scanning ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Scanning...</> : <><ScanLine className="h-4 w-4 mr-2" /> Scan Storage</>}
             </Button>
             <Button variant="outline" onClick={() => { setBulkImporting(!bulkImporting); setAdding(false); }}>
               {bulkImporting ? <><X className="h-4 w-4 mr-2" /> Cancel</> : <><FolderOpen className="h-4 w-4 mr-2" /> Bulk Import</>}
