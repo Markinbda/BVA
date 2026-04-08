@@ -237,6 +237,9 @@ const AdminImageManager = () => {
         })
         .sort((a, b) => a.page.localeCompare(b.page) || a.name.localeCompare(b.name));
       setImages(prepared);
+      // Auto-expand all page groups so content is visible immediately
+      const pages = Array.from(new Set(prepared.map((img) => img.page)));
+      setExpandedPages(pages);
     } catch (error) {
       toast({
         title: "Failed to load images",
@@ -682,8 +685,10 @@ const AdminImageManager = () => {
           </div>
         ) : filteredImages.length === 0 ? (
           <Card>
-            <CardContent className="text-center text-muted-foreground">
-              No images match the current search and filters.
+            <CardContent className="py-8 text-center text-muted-foreground">
+              {images.length === 0
+                ? "No images found in storage. Upload images via the Gallery or News admin pages first."
+                : "No images match the current search and filters."}
             </CardContent>
           </Card>
         ) : (
