@@ -44,7 +44,7 @@ const News = () => {
               <Link to={`/news/${article.id}`} key={article.id} className="group">
                 <Card className="overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 opacity-0 animate-slide-up" style={{ animationDelay: `${i * 100}ms` }}>
                   <div className="h-2 bg-accent" />
-                  <img src={article.image_url || placeholderNews} alt={article.title} className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <img src={article.image_url || placeholderNews} alt={article.title} data-db-image="1" className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   <CardHeader className="pb-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-accent">{article.category}</span>
                     <CardTitle className="font-heading text-lg leading-tight group-hover:text-accent transition-colors">{article.title}</CardTitle>

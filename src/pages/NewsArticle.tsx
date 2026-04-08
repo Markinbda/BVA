@@ -101,6 +101,7 @@ const NewsArticle = () => {
         <img
           src={article.image_url || placeholderNews}
           alt={article.title}
+          data-db-image="1"
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/40 to-transparent" />
@@ -183,6 +184,7 @@ const NewsArticle = () => {
                   <img
                     src={related.image_url || placeholderNews}
                     alt={related.title}
+                    data-db-image="1"
                     className="h-40 w-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="p-4">

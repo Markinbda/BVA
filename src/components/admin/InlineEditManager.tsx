@@ -76,6 +76,8 @@ const InlineEditManager = () => {
     changes.forEach((change) => {
       const el = document.querySelector(change.selector);
       if (!el) return;
+      // Skip images that are dynamically loaded from the DB — they manage their own src
+      if (el instanceof HTMLImageElement && el.dataset.dbImage) return;
       if (change.type === "text") {
         (el as HTMLElement).innerHTML = change.updated;
       } else if (change.type === "image" && el instanceof HTMLImageElement) {
@@ -120,7 +122,8 @@ const InlineEditManager = () => {
     const reapply = () => {
       selectorOverridesRef.current.forEach((url, selector) => {
         const el = document.querySelector(selector);
-        if (el instanceof HTMLImageElement && el.src !== url) {
+        // Skip images managed by the DB (data-db-image)
+        if (el instanceof HTMLImageElement && !el.dataset.dbImage && el.src !== url) {
           el.src = url;
         }
       });

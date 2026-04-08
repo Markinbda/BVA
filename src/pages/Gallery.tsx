@@ -122,7 +122,7 @@ const Gallery = () => {
                     onClick={() => openLightbox(globalIndex)}
                   >
                     {photo.image_url ? (
-                      <img src={photo.image_url} alt={photo.alt || ""} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                      <img src={photo.image_url} alt={photo.alt || ""} data-db-image="1" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/20 to-accent/20 text-sm text-muted-foreground">
                         📷 {photo.alt}
