@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import Layout from "@/components/Layout";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Heart, DollarSign } from "lucide-react";
+import adopt1 from "@/assets/Adopt1.jpg";
+import adopt2 from "@/assets/Adopt2.jpg";
+import adopt3 from "@/assets/Adopt3.jpg";
+import adopt4 from "@/assets/Adopt4.jpg";
+
+const FALLBACK_BG = [adopt1, adopt2, adopt3, adopt4];
+const BG_CATEGORY = "Adopt an Athlete Backgrounds";
 
 const tiers = [
   { amount: "$50", desc: "Helps cover a training session" },
@@ -12,10 +21,48 @@ const tiers = [
 ];
 
 const AdoptAnAthlete = () => {
+  const [bgPhotos, setBgPhotos] = useState<string[]>(FALLBACK_BG);
+
+  useEffect(() => {
+    supabase
+      .from("gallery_photos")
+      .select("image_url, sort_order")
+      .eq("category", BG_CATEGORY)
+      .order("sort_order", { ascending: true })
+      .limit(4)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          // Pad with fallbacks if fewer than 4 exist in DB
+          const urls = data.map((r: any) => r.image_url);
+          const padded = [...urls, ...FALLBACK_BG].slice(0, 4);
+          setBgPhotos(padded);
+        }
+      });
+  }, []);
+
   return (
     <Layout>
-      <PageHeader title="Adopt-an-Athlete" subtitle="Help our national team athletes pursue excellence" />
-      <div className="container mx-auto max-w-3xl px-4 py-12 space-y-8">
+      <div className="relative">
+        {/* 2×2 background photo grid — 20% opacity */}
+        <div
+          className="absolute inset-0 grid grid-cols-2 grid-rows-2 overflow-hidden pointer-events-none"
+          aria-hidden="true"
+        >
+          {bgPhotos.map((src, i) => (
+            <img
+              key={i}
+              src={src}
+              alt=""
+              data-adopt-bg={i}
+              className="w-full h-full object-cover opacity-20 pointer-events-auto"
+            />
+          ))}
+        </div>
+
+        {/* Page content above the background */}
+        <div className="relative z-10">
+        <PageHeader title="Adopt-an-Athlete" subtitle="Help our national team athletes pursue excellence" />
+        <div className="container mx-auto max-w-3xl px-4 py-12 space-y-8">
 
         <Card className="opacity-0 animate-fade-in">
           <CardContent className="flex gap-4 p-6">
@@ -97,7 +144,8 @@ const AdoptAnAthlete = () => {
           </Button>
         </div>
       </div>
-    </Layout>
+        </div>{/* /relative z-10 */}
+      </div>{/* /relative outer */}
   );
 };
 
