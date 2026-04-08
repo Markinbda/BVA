@@ -254,35 +254,9 @@ const AdminLeagues = () => {
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-
-  const handleDragEnd = useCallback(async () => {
-    const fromId = draggingId;
-    const toId = dragOverId;
-    setDraggingId(null);
-    setDragOverId(null);
-    if (!fromId || !toId || fromId === toId) return;
-
-    const fromTeam = rawTeams.find((t) => t.id === fromId);
-    const toTeam = rawTeams.find((t) => t.id === toId);
-    if (!fromTeam || !toTeam) return;
-
-    const sameRung = fromTeam.current_rung === toTeam.current_rung;
-
-    if (sameRung) {
-      // Swap sort_order within same rung
-      await Promise.all([
-        supabase.from("league_teams").update({ sort_order: toTeam.sort_order }).eq("id", fromId),
-        supabase.from("league_teams").update({ sort_order: fromTeam.sort_order }).eq("id", toId),
-      ]);
-    } else {
-      // Move to dropped-on team's rung, insert at that sort position
-      await supabase.from("league_teams").update({
-        current_rung: toTeam.current_rung,
-        sort_order: toTeam.sort_order,
-      }).eq("id", fromId);
-    }
-    queryClient.invalidateQueries({ queryKey: ["league_teams"] });
-  }, [draggingId, dragOverId, rawTeams, queryClient]);
+  // refs so handleDragEnd always sees latest values without needing deps
+  const draggingIdRef = useRef<string | null>(null);
+  const dragOverIdRef = useRef<string | null>(null);
 
   const { data: seasons = [] } = useQuery<Season[]>({
     queryKey: ["league_seasons"],
@@ -322,6 +296,33 @@ const AdminLeagues = () => {
     Object.values(map).forEach((arr) => arr.sort((a, b) => a.sort_order - b.sort_order));
     return map;
   }, [rawTeams]);
+
+  const handleDragEnd = useCallback(async () => {
+    const fromId = draggingIdRef.current;
+    const toId = dragOverIdRef.current;
+    setDraggingId(null);
+    setDragOverId(null);
+    draggingIdRef.current = null;
+    dragOverIdRef.current = null;
+    if (!fromId || !toId || fromId === toId) return;
+
+    const fromTeam = rawTeams.find((t) => t.id === fromId);
+    const toTeam = rawTeams.find((t) => t.id === toId);
+    if (!fromTeam || !toTeam) return;
+
+    if (fromTeam.current_rung === toTeam.current_rung) {
+      await Promise.all([
+        supabase.from("league_teams").update({ sort_order: toTeam.sort_order }).eq("id", fromId),
+        supabase.from("league_teams").update({ sort_order: fromTeam.sort_order }).eq("id", toId),
+      ]);
+    } else {
+      await supabase.from("league_teams").update({
+        current_rung: toTeam.current_rung,
+        sort_order: toTeam.sort_order,
+      }).eq("id", fromId);
+    }
+    queryClient.invalidateQueries({ queryKey: ["league_teams"] });
+  }, [rawTeams, queryClient]);
 
   const createSeason = useMutation({
     mutationFn: async () => {
@@ -546,8 +547,8 @@ const AdminLeagues = () => {
                             onToggle={() => setExpandedTeamId(expandedTeamId === team.id ? null : team.id)}
                             onMoveUp={() => moveTeam(team, "up")}
                             onMoveDown={() => moveTeam(team, "down")}
-                            onDragStart={(id) => setDraggingId(id)}
-                            onDragEnter={(id) => setDragOverId(id)}
+                            onDragStart={(id) => { setDraggingId(id); draggingIdRef.current = id; }}
+                            onDragEnter={(id) => { setDragOverId(id); dragOverIdRef.current = id; }}
                             onDragEnd={handleDragEnd}
                             onDelete={() => {
                               if (confirm(`Delete "${team.team_name}"? This also removes their match history.`)) {
