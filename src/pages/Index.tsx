@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Calendar, Users, Trophy, ArrowRight, Star, MapPin, ExternalLink } from "lucide-react";
-import placeholderNews from "@/assets/Splash screen/Mens Beach.jpg";
+import placeholderNews from "@/assets/placeholder-news.jpg";
 
 const fallbackNews = [
 { id: "1", title: "2025 Raffle Winners Announced!", date: "2025-03-01", category: "News", excerpt: "Congratulations to all the winners of the BVA 2025 raffle fundraiser.", image_url: null },
