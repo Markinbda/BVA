@@ -112,17 +112,28 @@ const InlineEditManager = () => {
       if (!data?.changes) return;
       const changes = data.changes as EditChange[];
 
-      // Pre-register image selectors so MutationObserver can re-apply them immediately
-      changes.forEach((c) => {
-        if (c.type === "image") selectorOverridesRef.current.set(c.selector, c.updated);
-      });
+      // Wait for page content to fully render before inspecting the DOM
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        // Only register image overrides for elements that are NOT DB-managed.
+        // This prevents stale saved edits from ever overwriting dynamically-loaded images.
+        const safeChanges = changes.filter((c) => {
+          if (c.type !== "image") return true;
+          const el = document.querySelector(c.selector);
+          // Skip if the element has data-db-image OR no longer exists
+          if (!el) return false;
+          if (el instanceof HTMLImageElement && el.dataset.dbImage) return false;
+          return true;
+        });
 
-      // Wait for page content to render before applying
-      requestAnimationFrame(() => requestAnimationFrame(() => applyChangesToDom(changes)));
+        selectorOverridesRef.current.clear();
+        safeChanges.forEach((c) => {
+          if (c.type === "image") selectorOverridesRef.current.set(c.selector, c.updated);
+        });
+
+        applyChangesToDom(safeChanges);
+      }));
     };
 
-    // Clear old overrides from previous page
-    selectorOverridesRef.current.clear();
     load();
   }, [location.pathname, applyChangesToDom]);
 
