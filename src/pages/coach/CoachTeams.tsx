@@ -16,13 +16,28 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Mail, Copy } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Pencil, Trash2, Mail, Copy, Filter } from "lucide-react";
 
 interface Team {
   id: string;
   name: string;
   description: string | null;
+  season_year: number | null;
+  gender: string | null;
+  age_group: string | null;
 }
+
+const GENDER_OPTIONS = ["Mixed", "Male", "Female"];
+const AGE_GROUP_OPTIONS = ["U10", "U12", "U14", "U16", "U18", "U20", "Senior", "Masters", "Open"];
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => currentYear - 1 + i);
 
 interface Player {
   id: string;
@@ -42,7 +57,14 @@ const CoachTeams = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
+  const [formYear, setFormYear] = useState<string>("");
+  const [formGender, setFormGender] = useState<string>("");
+  const [formAgeGroup, setFormAgeGroup] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  // Filters
+  const [filterYear, setFilterYear] = useState<string>("all");
+  const [filterGender, setFilterGender] = useState<string>("all");
+  const [filterAgeGroup, setFilterAgeGroup] = useState<string>("all");
 
   const fetchData = async () => {
     if (!user) return;
@@ -69,6 +91,9 @@ const CoachTeams = () => {
     setEditingId(null);
     setFormName("");
     setFormDesc("");
+    setFormYear("");
+    setFormGender("");
+    setFormAgeGroup("");
     setDialogOpen(true);
   };
 
@@ -76,6 +101,9 @@ const CoachTeams = () => {
     setEditingId(team.id);
     setFormName(team.name);
     setFormDesc(team.description ?? "");
+    setFormYear(team.season_year ? String(team.season_year) : "");
+    setFormGender(team.gender ?? "");
+    setFormAgeGroup(team.age_group ?? "");
     setDialogOpen(true);
   };
 
@@ -85,7 +113,14 @@ const CoachTeams = () => {
       return;
     }
     setSaving(true);
-    const payload = { coach_id: user.id, name: formName.trim(), description: formDesc.trim() || null };
+    const payload = {
+      coach_id: user.id,
+      name: formName.trim(),
+      description: formDesc.trim() || null,
+      season_year: formYear ? Number(formYear) : null,
+      gender: formGender || null,
+      age_group: formAgeGroup || null,
+    };
     let error;
     if (editingId) {
       ({ error } = await (supabase as any).from("coach_teams").update(payload).eq("id", editingId));
@@ -134,14 +169,71 @@ const CoachTeams = () => {
           </Button>
         </div>
 
-        {/* Named teams (from coach_teams table) */}
+        {/* Filters */}
         {teams.length > 0 && (
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+                <Select value={filterYear} onValueChange={setFilterYear}>
+                  <SelectTrigger className="w-[130px] h-8 text-sm">
+                    <SelectValue placeholder="All years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All years</SelectItem>
+                    {YEAR_OPTIONS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filterGender} onValueChange={setFilterGender}>
+                  <SelectTrigger className="w-[130px] h-8 text-sm">
+                    <SelectValue placeholder="All genders" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All genders</SelectItem>
+                    {GENDER_OPTIONS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filterAgeGroup} onValueChange={setFilterAgeGroup}>
+                  <SelectTrigger className="w-[140px] h-8 text-sm">
+                    <SelectValue placeholder="All age groups" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All age groups</SelectItem>
+                    {AGE_GROUP_OPTIONS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {(filterYear !== "all" || filterGender !== "all" || filterAgeGroup !== "all") && (
+                  <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setFilterYear("all"); setFilterGender("all"); setFilterAgeGroup("all"); }}>Clear filters</Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Named teams (from coach_teams table) */}
+        {teams.length > 0 && (() => {
+          const filtered = teams.filter((t) =>
+            (filterYear === "all" || String(t.season_year) === filterYear) &&
+            (filterGender === "all" || t.gender === filterGender) &&
+            (filterAgeGroup === "all" || t.age_group === filterAgeGroup)
+          );
+          return (
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Registered Teams</h2>
-            {teams.map((team) => (
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Registered Teams ({filtered.length})</h2>
+            {filtered.length === 0 && (
+              <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">No teams match the selected filters.</CardContent></Card>
+            )}
+            {filtered.map((team) => (
               <Card key={team.id}>
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-base">{team.name}</CardTitle>
+                  <div>
+                    <CardTitle className="text-base">{team.name}</CardTitle>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {team.season_year && <Badge variant="outline" className="text-xs">{team.season_year}</Badge>}
+                      {team.gender && <Badge variant="outline" className="text-xs">{team.gender}</Badge>}
+                      {team.age_group && <Badge variant="outline" className="text-xs">{team.age_group}</Badge>}
+                    </div>
+                  </div>
                   <div className="flex gap-2">
                     <Button size="icon" variant="ghost" onClick={() => openEdit(team)}><Pencil className="h-4 w-4" /></Button>
                     <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(team.id, team.name)}>
@@ -157,7 +249,8 @@ const CoachTeams = () => {
               </Card>
             ))}
           </div>
-        )}
+          );
+        })()}
 
         {/* Auto-generated mailing lists from player groups */}
         <div className="space-y-2">
@@ -228,7 +321,39 @@ const CoachTeams = () => {
           <div className="space-y-4 py-2">
             <div className="space-y-1">
               <Label>Team Name *</Label>
-              <Input placeholder="e.g. U14 Girls" value={formName} onChange={(e) => setFormName(e.target.value)} />
+              <Input placeholder="e.g. U14 Girls Varsity" value={formName} onChange={(e) => setFormName(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label>Year</Label>
+                <Select value={formYear} onValueChange={setFormYear}>
+                  <SelectTrigger><SelectValue placeholder="Year" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">—</SelectItem>
+                    {YEAR_OPTIONS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Gender</Label>
+                <Select value={formGender} onValueChange={setFormGender}>
+                  <SelectTrigger><SelectValue placeholder="Gender" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">—</SelectItem>
+                    {GENDER_OPTIONS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Age Group</Label>
+                <Select value={formAgeGroup} onValueChange={setFormAgeGroup}>
+                  <SelectTrigger><SelectValue placeholder="Group" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">—</SelectItem>
+                    {AGE_GROUP_OPTIONS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="space-y-1">
               <Label>Description</Label>
