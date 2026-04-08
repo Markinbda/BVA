@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAdminEditMode, type EditChange } from "@/contexts/AdminEditModeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import GalleryPicker from "@/components/admin/GalleryPicker";
 import {
   ChevronRight,
   FileImage,
@@ -91,6 +92,7 @@ const EditSidebar = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageSaving, setImageSaving] = useState(false);
+  const [galleryPickerOpen, setGalleryPickerOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const highlightRef = useRef<HTMLDivElement | null>(null);
@@ -399,12 +401,38 @@ const EditSidebar = () => {
     setSelected(null);
   };
 
+  // ── Apply gallery-picked image directly ────────────────────────────────────
+  const applyGalleryImage = (url: string) => {
+    if (!selected) return;
+    const oldSrc = (document.querySelector(selected.selector) as HTMLImageElement)?.src ?? selected.currentValue;
+    const el = document.querySelector(selected.selector) as HTMLImageElement | null;
+    if (el) { el.src = url; selectorOverridesRef.current.set(selected.selector, url); }
+    addChange({
+      id: `${selected.selector}-${Date.now()}`,
+      type: "image",
+      selector: selected.selector,
+      label: selected.label,
+      original: oldSrc,
+      updated: url,
+    });
+    setImagePreview(url);
+    setImageFile(null);
+    setSelected(null);
+    setGalleryPickerOpen(false);
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // Gate: only show for admins / content editors
   if (!canEditContent && !isAdmin) return null;
 
   return (
     <>
+      <GalleryPicker
+        open={galleryPickerOpen}
+        onClose={() => setGalleryPickerOpen(false)}
+        onSelect={applyGalleryImage}
+        folder="inline-edits"
+      />
       {/* Tab trigger when sidebar is closed */}
       {!open && (
         <button
@@ -493,9 +521,9 @@ const EditSidebar = () => {
                 ) : (
                   <div className="space-y-3">
                     {imagePreview && (
-                      <img src={imagePreview} alt="Preview" className="w-full rounded-lg border border-border object-contain max-h-48" />
+                      <img src={imagePreview} alt="Preview" className="w-full rounded-lg border border-border object-cover max-h-48" />
                     )}
-                    <Label className="text-xs text-muted-foreground">Select a new image to replace this one</Label>
+                    <Label className="text-xs text-muted-foreground">Replace this image</Label>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -503,6 +531,11 @@ const EditSidebar = () => {
                       onChange={handleImageFile}
                       className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-xs file:font-medium file:text-primary"
                     />
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="flex-1" onClick={() => setGalleryPickerOpen(true)}>
+                        Choose from Gallery
+                      </Button>
+                    </div>
                     <div className="flex gap-2">
                       <Button size="sm" className="flex-1" onClick={applyImageChange} disabled={!imageFile || imageSaving}>
                         {imageSaving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <ImagePlus className="mr-2 h-3 w-3" />}
