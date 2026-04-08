@@ -21,8 +21,8 @@ const SeniorProgram = () => {
         </div>
 
         {/* Hero Image */}
-        <div className="mb-12 overflow-hidden rounded-lg">
-          <img src={placeholderNational} alt="Bermuda National Teams" className="h-64 w-full object-cover" />
+        <div className="mb-12 h-64 overflow-hidden rounded-lg">
+          <img src={placeholderNational} alt="Bermuda National Teams" className="h-full w-full object-cover" />
         </div>
 
         {/* History Detail */}
@@ -53,7 +53,9 @@ const SeniorProgram = () => {
         <div className="grid gap-8 md:grid-cols-2">
           <Card className="group overflow-hidden transition-shadow hover:shadow-lg hover:-translate-y-1 duration-300">
             <div className="h-2 bg-accent" />
-            <img src={placeholderNational} alt="Men's National Team" className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="h-48 overflow-hidden">
+              <img src={placeholderNational} alt="Men's National Team" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            </div>
             <CardHeader>
               <CardTitle className="font-heading text-2xl uppercase">Men's National Team</CardTitle>
             </CardHeader>
@@ -83,7 +85,9 @@ const SeniorProgram = () => {
 
           <Card className="group overflow-hidden transition-shadow hover:shadow-lg hover:-translate-y-1 duration-300">
             <div className="h-2 bg-accent" />
-            <img src={placeholderNational} alt="Women's National Team" className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="h-48 overflow-hidden">
+              <img src={placeholderNational} alt="Women's National Team" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            </div>
             <CardHeader>
               <CardTitle className="font-heading text-2xl uppercase">Women's National Team</CardTitle>
             </CardHeader>
