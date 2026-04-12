@@ -9,6 +9,7 @@ import {
   Menu,
   X,
   ShieldCheck,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -17,6 +18,7 @@ const navItems = [
   { path: "/coach", label: "Dashboard", icon: LayoutDashboard },
   { path: "/coach/players", label: "Players", icon: Users },
   { path: "/coach/teams", label: "Teams & Mailing Lists", icon: ClipboardList },
+  { path: "/coach/videos", label: "Video Library", icon: Video },
   { path: "/coach/email", label: "Send Email", icon: Mail },
   { path: "/coach/email-history", label: "Email History", icon: ClipboardList },
 ];

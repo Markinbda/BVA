@@ -44,6 +44,7 @@ import AdminSeasons from "./pages/admin/AdminSeasons";
 import AdminEventCategories from "./pages/admin/AdminEventCategories";
 import AdminGalleryCategories from "./pages/admin/AdminGalleryCategories";
 import AdminEventLocations from "./pages/admin/AdminEventLocations";
+import AdminVideos from "./pages/admin/AdminVideos";
 import EditSidebar from "@/components/admin/EditSidebar";
 import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
 import MemberRegistration from "./pages/MemberRegistration";
@@ -84,6 +85,7 @@ import CoachPlayers from "./pages/coach/CoachPlayers";
 import CoachTeams from "./pages/coach/CoachTeams";
 import CoachEmail from "./pages/coach/CoachEmail";
 import CoachEmailHistory from "./pages/coach/CoachEmailHistory";
+import CoachVideos from "./pages/coach/CoachVideos";
 
 const queryClient = new QueryClient();
 
@@ -137,6 +139,7 @@ const App = () => (
             <Route path="/admin/event-categories" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventCategories /></AdminRoute>} />
             <Route path="/admin/gallery-categories" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGalleryCategories /></AdminRoute>} />
             <Route path="/admin/event-locations" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventLocations /></AdminRoute>} />
+            <Route path="/admin/videos" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminVideos /></AdminRoute>} />
 
             {/* About sub-pages */}
             <Route path="/about/mission" element={<Mission />} />
@@ -176,6 +179,7 @@ const App = () => (
             <Route path="/coach" element={<CoachRoute><CoachDashboard /></CoachRoute>} />
             <Route path="/coach/players" element={<CoachRoute><CoachPlayers /></CoachRoute>} />
             <Route path="/coach/teams" element={<CoachRoute><CoachTeams /></CoachRoute>} />
+            <Route path="/coach/videos" element={<CoachRoute><CoachVideos /></CoachRoute>} />
             <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
             <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />
 

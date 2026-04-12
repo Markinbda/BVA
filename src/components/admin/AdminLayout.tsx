@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
   Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
-  Tag, MapPin, ClipboardList, SlidersHorizontal
+  Tag, MapPin, ClipboardList, SlidersHorizontal, Video
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -23,6 +23,7 @@ const navItems = [
   { path: "/admin/hero-slides", label: "Homepage Slider", icon: SlidersHorizontal, permission: "manage_pages" },
   { path: "/admin/sponsors", label: "Sponsors", icon: Heart, permission: "manage_sponsors" },
   { path: "/admin/leagues", label: "Leagues", icon: Trophy, permission: "manage_leagues" },
+  { path: "/admin/videos", label: "Videos", icon: Video, permission: "manage_gallery" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
   { path: "/coach", label: "Coach Portal", icon: ClipboardList, permission: "manage_coaches" },
@@ -67,7 +68,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
             <p className="text-xs text-muted-foreground mt-1 truncate">{user?.email}</p>
           </div>
 
-          <nav className="flex-1 p-3 space-y-1">
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
             {visibleNavItems.map(({ path, label, icon: Icon }) => {
               const isActive = location.pathname === path;
               return (
