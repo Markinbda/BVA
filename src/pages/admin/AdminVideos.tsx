@@ -180,7 +180,7 @@ const AdminVideos = () => {
 
       let offset = 0;
       while (offset < videoFile.size) {
-        const end = Math.min(offset + 50 * 1024 * 1024, videoFile.size);
+        const end = Math.min(offset + 5 * 1024 * 1024, videoFile.size);
         const chunk = videoFile.slice(offset, end);
         const res = await fetch(uploadUrl, {
           method: "PATCH",
@@ -192,9 +192,10 @@ const AdminVideos = () => {
           },
           body: chunk,
         });
+        // Always drain to free memory
+        await res.body?.cancel();
         if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          throw new Error(`Upload failed: ${res.status} ${txt}`);
+          throw new Error(`Upload failed at ${offset}: ${res.status}`);
         }
         offset = end;
         setUploadProgress(5 + Math.round((offset / videoFile.size) * 88));
@@ -327,6 +328,7 @@ const AdminVideos = () => {
                     <>
                       <img src={cfThumbUrl(video.video_uid)} alt={video.title}
                         className="w-full h-full object-cover"
+                        loading="lazy"
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       <button onClick={() => setPlayingId(video.id)}
                         className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/50 transition-colors group">

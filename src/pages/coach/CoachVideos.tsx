@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Video, Trash2, ExternalLink, Play, X, Bell, Pencil } from "lucide-react";
+import { Upload, Video, Trash2, ExternalLink, Play, X, Bell, Pencil, Share2 } from "lucide-react";
 import NotifyVideoModal from "@/components/coach/NotifyVideoModal";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -84,6 +84,7 @@ const CoachVideos = () => {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [notifyVideo, setNotifyVideo] = useState<CoachVideo | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const [editVideo, setEditVideo] = useState<CoachVideo | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -176,7 +177,7 @@ const CoachVideos = () => {
     uploadUrl: string,
     onProgress: (pct: number) => void
   ): Promise<void> => {
-    const CHUNK = 50 * 1024 * 1024;
+    const CHUNK = 5 * 1024 * 1024; // 5 MB — minimum Cloudflare allows, keeps memory low
     let offset = 0;
     while (offset < file.size) {
       const end = Math.min(offset + CHUNK, file.size);
@@ -191,9 +192,10 @@ const CoachVideos = () => {
         },
         body: chunk,
       });
+      // Always drain the response body to free memory
+      await res.body?.cancel();
       if (!res.ok) {
-        const txt = await res.text().catch(() => "");
-        throw new Error(`Upload failed: ${res.status} ${txt}`);
+        throw new Error(`Upload failed at ${offset}: ${res.status}`);
       }
       offset = end;
       onProgress(offset / file.size);
@@ -264,9 +266,14 @@ const CoachVideos = () => {
               Upload videos from your device - hosted on Cloudflare Stream, shared privately with your teams.
             </p>
           </div>
-          <Button onClick={() => setUploadOpen(true)} className="gap-2">
-            <Upload className="h-4 w-4" /> Upload Video
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShareOpen(true)} className="gap-2" disabled={videos.length === 0}>
+              <Share2 className="h-4 w-4" /> Share with Players
+            </Button>
+            <Button onClick={() => setUploadOpen(true)} className="gap-2">
+              <Upload className="h-4 w-4" /> Upload Video
+            </Button>
+          </div>
         </div>
 
         <input ref={fileInputRef} type="file" accept="video/*" className="hidden"
@@ -319,6 +326,7 @@ const CoachVideos = () => {
                     <>
                       <img src={cfThumbUrl(video.video_uid)} alt={video.title}
                         className="w-full h-full object-cover"
+                        loading="lazy"
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                       <button onClick={() => setPlayingId(video.id)}
                         className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/50 transition-colors group">
@@ -368,11 +376,21 @@ const CoachVideos = () => {
         {loading && <div className="flex justify-center py-16 text-muted-foreground text-sm">Loading videos...</div>}
       </div>
 
-      {/* Notify modal */}
+      {/* Notify modal — triggered from bell icon on card */}
       <NotifyVideoModal
         video={notifyVideo}
         teams={teams}
         onClose={() => setNotifyVideo(null)}
+        onVisibilityChange={(id, vis) => setVideos(prev => prev.map(v => v.id === id ? { ...v, visibility: vis } : v))}
+      />
+
+      {/* Share with Players — triggered from header button, video picker first */}
+      <NotifyVideoModal
+        video={null}
+        allVideos={videos}
+        open={shareOpen}
+        teams={teams}
+        onClose={() => setShareOpen(false)}
         onVisibilityChange={(id, vis) => setVideos(prev => prev.map(v => v.id === id ? { ...v, visibility: vis } : v))}
       />
 

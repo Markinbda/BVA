@@ -11,7 +11,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Globe, GlobeLock, Loader2 } from "lucide-react";
+import { Bell, Globe, GlobeLock, Loader2, Play } from "lucide-react";
 
 interface Team  { id: string; name: string; }
 interface Player { id: string; first_name: string; last_name: string; email: string | null; }
@@ -29,10 +29,24 @@ interface Props {
   teams: Team[];
   onClose: () => void;
   onVisibilityChange?: (videoId: string, visibility: string) => void;
+  /** When provided, shows a video picker step before the notify step */
+  allVideos?: CoachVideo[];
+  /** Whether the dialog is open (required when using allVideos picker) */
+  open?: boolean;
 }
 
-export default function NotifyVideoModal({ video, teams, onClose, onVisibilityChange }: Props) {
+export default function NotifyVideoModal({ video: videoProp, teams, onClose, onVisibilityChange, allVideos, open }: Props) {
   const { toast } = useToast();
+
+  // When allVideos is provided, we manage the selected video internally
+  const [pickedVideo, setPickedVideo] = useState<CoachVideo | null>(null);
+  const video = allVideos ? pickedVideo : videoProp;
+  const isOpen = allVideos ? (open ?? false) : !!videoProp;
+
+  const handleClose = () => {
+    setPickedVideo(null);
+    onClose();
+  };
 
   const [selectedTeamId, setSelectedTeamId] = useState<string>("__all__");
   const [players, setPlayers]               = useState<Player[]>([]);
@@ -112,13 +126,47 @@ export default function NotifyVideoModal({ video, teams, onClose, onVisibilityCh
     setTogglingVisibility(false);
   };
 
+  if (!isOpen) return null;
+
+  // ── Video picker step (when allVideos prop provided and no video picked yet) ──
+  if (allVideos && !video) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Share a Video</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">Pick a video to share with your players.</p>
+          <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+            {allVideos.length === 0 && (
+              <p className="text-sm text-center text-muted-foreground py-8">No videos in your library yet.</p>
+            )}
+            {allVideos.map(v => (
+              <button key={v.id} onClick={() => setPickedVideo(v)}
+                className="w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left hover:bg-muted/60 transition-colors">
+                <Play className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{v.title}</p>
+                  {v.visibility === 'public' && <span className="text-xs text-green-600">Public Gallery</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   if (!video) return null;
 
   const isPublic = video.visibility === "public";
   const playersWithEmail = players.filter(p => p.email);
 
   return (
-    <Dialog open={!!video} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold truncate">{video.title}</DialogTitle>
@@ -198,7 +246,12 @@ export default function NotifyVideoModal({ video, teams, onClose, onVisibilityCh
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          {allVideos && (
+            <Button variant="ghost" onClick={() => setPickedVideo(null)} disabled={sending} className="mr-auto">
+              ← Back
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
           <Button
             onClick={handleSend}
             disabled={sending || selectedPlayerIds.size === 0}
