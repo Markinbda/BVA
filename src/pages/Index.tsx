@@ -7,7 +7,7 @@ import HeroSlider from "@/components/HeroSlider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Calendar, Users, Trophy, ArrowRight, Star, MapPin, ExternalLink } from "lucide-react";
+import { Calendar, Users, Trophy, ArrowRight, Star, MapPin, ExternalLink, Radio } from "lucide-react";
 import placeholderNews from "@/assets/placeholder-news.jpg";
 
 const fallbackNews = [
@@ -58,6 +58,22 @@ const Index = () => {
     }
   });
 
+  // Poll every 30s for active live streams
+  const { data: liveStreams } = useQuery({
+    queryKey: ["live-streams-active"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("live_streams")
+        .select("id, title, cloudflare_playback_url")
+        .eq("is_live", true)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      return (data ?? []) as { id: string; title: string; cloudflare_playback_url: string }[];
+    },
+    refetchInterval: 30_000,
+  });
+  const activeLiveStream = liveStreams?.[0] ?? null;
+
   const displayNews = newsArticles?.length ? newsArticles : fallbackNews;
   const displayEvents = events?.length ? events : fallbackEvents;
   const displaySponsors = sponsors?.length ? sponsors : [
@@ -66,6 +82,47 @@ const Index = () => {
   return (
     <Layout>
       <HeroSlider />
+
+      {/* ── Live Stream Banner ── */}
+      {activeLiveStream && (
+        <section className="bg-primary text-primary-foreground">
+          <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-3 w-3 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+              </span>
+              <div>
+                <p className="font-bold text-sm uppercase tracking-wide">Live Now</p>
+                <p className="text-sm text-primary-foreground/80">{activeLiveStream.title}</p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="bg-accent text-accent-foreground hover:bg-accent/90 font-semibold gap-2 shrink-0"
+              onClick={() => {
+                const el = document.getElementById("live-stream-player");
+                el?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              <Radio className="h-4 w-4" /> Watch Live
+            </Button>
+          </div>
+
+          {/* Embedded player */}
+          <div id="live-stream-player" className="container mx-auto px-4 pb-6">
+            <div className="rounded-xl overflow-hidden aspect-video max-w-3xl mx-auto shadow-2xl bg-black">
+              <iframe
+                src={`${activeLiveStream.cloudflare_playback_url}${activeLiveStream.cloudflare_playback_url.includes('?') ? '&' : '?'}autoplay=true&muted=true`}
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+                className="w-full h-full"
+                title={activeLiveStream.title}
+              />
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Main content */}
       <div className="container mx-auto px-4 py-16">

@@ -62,12 +62,29 @@ Deno.serve(async (req: Request) => {
     const playerSet = new Set<string>();
 
     if (team_ids.length) {
-      const { data: teamPlayers } = await supabase
-        .from("coach_players")
-        .select("id, first_name, last_name, email")
-        .in("team_id", team_ids)
-        .not("email", "is", null);
-      (teamPlayers ?? []).forEach((p: any) => p.email && playerSet.add(JSON.stringify({ id: p.id, name: `${p.first_name} ${p.last_name}`, email: p.email })));
+      // Look up team names so we can also match against the legacy text `team` field
+      const { data: teamRows } = await supabase
+        .from("coach_teams")
+        .select("id, name")
+        .in("id", team_ids);
+      const teamNames: string[] = (teamRows ?? []).map((t: any) => t.name);
+
+      // Query by team_id UUID (new records) and by team text field (legacy records)
+      const [byId, byName] = await Promise.all([
+        supabase.from("coach_players").select("id, first_name, last_name, email")
+          .in("team_id", team_ids).not("email", "is", null),
+        teamNames.length
+          ? supabase.from("coach_players").select("id, first_name, last_name, email")
+              .in("team", teamNames).not("email", "is", null)
+          : Promise.resolve({ data: [] }),
+      ]);
+      const seen = new Set<string>();
+      for (const p of [...(byId.data ?? []), ...(byName.data ?? [])]) {
+        if (p.email && !seen.has(p.id)) {
+          seen.add(p.id);
+          playerSet.add(JSON.stringify({ id: p.id, name: `${p.first_name} ${p.last_name}`, email: p.email }));
+        }
+      }
     }
 
     if (player_ids.length) {

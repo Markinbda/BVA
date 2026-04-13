@@ -172,33 +172,38 @@ const CoachVideos = () => {
     }
   };
 
+  // XHR avoids fetch's internal request buffering, keeping large-file memory low
+  const xhrPatch = (uploadUrl: string, blob: Blob, offset: number, fileSize: number): Promise<void> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PATCH", uploadUrl);
+      xhr.setRequestHeader("Tus-Resumable", "1.0.0");
+      xhr.setRequestHeader("Upload-Offset", String(offset));
+      xhr.setRequestHeader("Upload-Length", String(fileSize));
+      xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
+      xhr.responseType = "text"; // prevent response buffering as ArrayBuffer
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Upload failed at offset ${offset}: ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error(`Network error at offset ${offset}`));
+      xhr.send(blob);
+    });
+
   const uploadFileWithProgress = async (
     file: File,
     uploadUrl: string,
     onProgress: (pct: number) => void
   ): Promise<void> => {
-    const CHUNK = 5 * 1024 * 1024; // 5 MB — minimum Cloudflare allows, keeps memory low
+    const CHUNK = 5 * 1024 * 1024; // 5 MB
     let offset = 0;
     while (offset < file.size) {
       const end = Math.min(offset + CHUNK, file.size);
-      const chunk = file.slice(offset, end);
-      const res = await fetch(uploadUrl, {
-        method: "PATCH",
-        headers: {
-          "Tus-Resumable": "1.0.0",
-          "Upload-Offset": String(offset),
-          "Upload-Length": String(file.size),
-          "Content-Type": "application/offset+octet-stream",
-        },
-        body: chunk,
-      });
-      // Always drain the response body to free memory
-      await res.body?.cancel();
-      if (!res.ok) {
-        throw new Error(`Upload failed at ${offset}: ${res.status}`);
-      }
+      await xhrPatch(uploadUrl, file.slice(offset, end), offset, file.size);
       offset = end;
       onProgress(offset / file.size);
+      // yield to browser task queue so GC can reclaim the sent chunk
+      await new Promise(r => setTimeout(r, 0));
     }
   };
 

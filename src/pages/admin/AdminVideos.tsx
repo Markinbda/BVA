@@ -178,27 +178,32 @@ const AdminVideos = () => {
       const { uploadUrl, uid } = data;
       setUploadProgress(5); setUploadStatus("Uploading video...");
 
+      // XHR avoids fetch's internal request buffering, keeping large-file memory low
+      const xhrPatch = (url: string, blob: Blob, off: number, total: number): Promise<void> =>
+        new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PATCH", url);
+          xhr.setRequestHeader("Tus-Resumable", "1.0.0");
+          xhr.setRequestHeader("Upload-Offset", String(off));
+          xhr.setRequestHeader("Upload-Length", String(total));
+          xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
+          xhr.responseType = "text";
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Upload failed at offset ${off}: ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error(`Network error at offset ${off}`));
+          xhr.send(blob);
+        });
+
       let offset = 0;
       while (offset < videoFile.size) {
         const end = Math.min(offset + 5 * 1024 * 1024, videoFile.size);
-        const chunk = videoFile.slice(offset, end);
-        const res = await fetch(uploadUrl, {
-          method: "PATCH",
-          headers: {
-            "Tus-Resumable": "1.0.0",
-            "Upload-Offset": String(offset),
-            "Upload-Length": String(videoFile.size),
-            "Content-Type": "application/offset+octet-stream",
-          },
-          body: chunk,
-        });
-        // Always drain to free memory
-        await res.body?.cancel();
-        if (!res.ok) {
-          throw new Error(`Upload failed at ${offset}: ${res.status}`);
-        }
+        await xhrPatch(uploadUrl, videoFile.slice(offset, end), offset, videoFile.size);
         offset = end;
         setUploadProgress(5 + Math.round((offset / videoFile.size) * 88));
+        // yield to browser task queue so GC can reclaim the sent chunk
+        await new Promise(r => setTimeout(r, 0));
       }
 
       setUploadProgress(95); setUploadStatus("Saving...");

@@ -86,6 +86,7 @@ import CoachTeams from "./pages/coach/CoachTeams";
 import CoachEmail from "./pages/coach/CoachEmail";
 import CoachEmailHistory from "./pages/coach/CoachEmailHistory";
 import CoachVideos from "./pages/coach/CoachVideos";
+import CoachLiveStream from "./pages/coach/CoachLiveStream";
 
 const queryClient = new QueryClient();
 
@@ -180,6 +181,7 @@ const App = () => (
             <Route path="/coach/players" element={<CoachRoute><CoachPlayers /></CoachRoute>} />
             <Route path="/coach/teams" element={<CoachRoute><CoachTeams /></CoachRoute>} />
             <Route path="/coach/videos" element={<CoachRoute><CoachVideos /></CoachRoute>} />
+            <Route path="/coach/live" element={<CoachRoute><CoachLiveStream /></CoachRoute>} />
             <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
             <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />
 

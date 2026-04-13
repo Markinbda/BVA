@@ -62,21 +62,31 @@ export default function NotifyVideoModal({ video: videoProp, teams, onClose, onV
     if (selectedTeamId === "__all__") {
       // Load players from all teams this video is shared with
       const tIds = video.team_ids?.length ? video.team_ids : teams.map(t => t.id);
-      loadPlayers(tIds);
+      const tNames = tIds.map(id => teams.find(t => t.id === id)?.name).filter(Boolean) as string[];
+      loadPlayers(tIds, tNames);
     } else {
-      loadPlayers([selectedTeamId]);
+      const tName = teams.find(t => t.id === selectedTeamId)?.name;
+      loadPlayers([selectedTeamId], tName ? [tName] : []);
     }
   }, [selectedTeamId, video]);
 
-  const loadPlayers = async (teamIds: string[]) => {
-    if (!teamIds.length) { setPlayers([]); return; }
+  // Players can be linked by team_id UUID (new) or by team text field (legacy).
+  // Query both and merge to avoid missing players added before the FK was used.
+  const loadPlayers = async (teamIds: string[], teamNames: string[] = []) => {
+    if (!teamIds.length && !teamNames.length) { setPlayers([]); return; }
     setLoadingPlayers(true);
-    const { data } = await (supabase as any)
-      .from("coach_players")
-      .select("id, first_name, last_name, email")
-      .in("team_id", teamIds)
-      .order("last_name");
-    setPlayers(data ?? []);
+    const [byId, byName] = await Promise.all([
+      teamIds.length
+        ? (supabase as any).from("coach_players").select("id, first_name, last_name, email").in("team_id", teamIds)
+        : Promise.resolve({ data: [] }),
+      teamNames.length
+        ? (supabase as any).from("coach_players").select("id, first_name, last_name, email").in("team", teamNames)
+        : Promise.resolve({ data: [] }),
+    ]);
+    // Deduplicate by id, then sort
+    const map = new Map<string, Player>();
+    [...(byId.data ?? []), ...(byName.data ?? [])].forEach((p: Player) => map.set(p.id, p));
+    setPlayers([...map.values()].sort((a, b) => a.last_name.localeCompare(b.last_name)));
     setLoadingPlayers(false);
   };
 
