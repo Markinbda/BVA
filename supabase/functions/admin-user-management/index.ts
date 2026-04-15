@@ -87,12 +87,16 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Update phone in profile if provided
-      if (phone && created.user) {
-        await adminClient
-          .from("profiles")
-          .update({ phone })
-          .eq("user_id", created.user.id);
+      // Explicitly upsert profile row — do not rely solely on the trigger
+      if (created.user) {
+        await adminClient.from("profiles").upsert(
+          {
+            user_id: created.user.id,
+            display_name: display_name,
+            phone: phone ?? null,
+          },
+          { onConflict: "user_id" }
+        );
       }
 
       return new Response(JSON.stringify({ user_id: created.user?.id }), {

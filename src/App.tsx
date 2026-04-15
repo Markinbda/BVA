@@ -45,10 +45,12 @@ import AdminEventCategories from "./pages/admin/AdminEventCategories";
 import AdminGalleryCategories from "./pages/admin/AdminGalleryCategories";
 import AdminEventLocations from "./pages/admin/AdminEventLocations";
 import AdminVideos from "./pages/admin/AdminVideos";
+import AdminTeams from "./pages/admin/AdminTeams";
 import EditSidebar from "@/components/admin/EditSidebar";
 import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
 import MemberRegistration from "./pages/MemberRegistration";
 import ProfileDashboard from "./pages/ProfileDashboard";
+import PlayerNotesView from "./pages/PlayerNotesView";
 import PlayerSearch from "./pages/PlayerSearch";
 import LeagueStandings from "./pages/LeagueStandings";
 // About sub-pages
@@ -86,6 +88,7 @@ import CoachTeams from "./pages/coach/CoachTeams";
 import CoachEmail from "./pages/coach/CoachEmail";
 import CoachEmailHistory from "./pages/coach/CoachEmailHistory";
 import CoachVideos from "./pages/coach/CoachVideos";
+import CoachVideoReview from "./pages/coach/CoachVideoReview";
 import CoachLiveStream from "./pages/coach/CoachLiveStream";
 
 const queryClient = new QueryClient();
@@ -141,6 +144,7 @@ const App = () => (
             <Route path="/admin/gallery-categories" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGalleryCategories /></AdminRoute>} />
             <Route path="/admin/event-locations" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventLocations /></AdminRoute>} />
             <Route path="/admin/videos" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminVideos /></AdminRoute>} />
+            <Route path="/admin/teams" element={<AdminRoute requiredPermissions={["manage_coaches"]}><AdminTeams /></AdminRoute>} />
 
             {/* About sub-pages */}
             <Route path="/about/mission" element={<Mission />} />
@@ -174,6 +178,7 @@ const App = () => (
 
             <Route path="/member-registration" element={<MemberRegistration />} />
             <Route path="/profile" element={<ProfileDashboard />} />
+            <Route path="/my-notes" element={<PlayerNotesView />} />
             <Route path="/players" element={<PlayerSearch />} />
 
             {/* Coach portal */}
@@ -181,6 +186,7 @@ const App = () => (
             <Route path="/coach/players" element={<CoachRoute><CoachPlayers /></CoachRoute>} />
             <Route path="/coach/teams" element={<CoachRoute><CoachTeams /></CoachRoute>} />
             <Route path="/coach/videos" element={<CoachRoute><CoachVideos /></CoachRoute>} />
+            <Route path="/coach/video-review/:videoId" element={<CoachRoute><CoachVideoReview /></CoachRoute>} />
             <Route path="/coach/live" element={<CoachRoute><CoachLiveStream /></CoachRoute>} />
             <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
             <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />

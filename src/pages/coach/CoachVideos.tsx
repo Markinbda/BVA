@@ -1,4 +1,5 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
@@ -11,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Video, Trash2, ExternalLink, Play, X, Bell, Pencil, Share2 } from "lucide-react";
+import { Upload, Video, Trash2, ExternalLink, Play, X, Bell, Pencil, Share2, Users, ClipboardList } from "lucide-react";
 import NotifyVideoModal from "@/components/coach/NotifyVideoModal";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -44,13 +45,16 @@ interface Team {
 
 interface CoachVideo {
   id: string;
+  coach_id: string;
   title: string;
   description: string | null;
   video_uid: string;
+  video_provider: "cloudflare" | "youtube";
   team_ids: string[];
   categories: string[];
   visibility: string;
   created_at: string;
+  uploader_name?: string;
 }
 
 const ACCEPTED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/webm", "video/mpeg"];
@@ -59,19 +63,50 @@ export const cfEmbedUrl = (uid: string) => `https://iframe.videodelivery.net/${u
 export const cfThumbUrl = (uid: string) => `https://videodelivery.net/${uid}/thumbnails/thumbnail.jpg`;
 export const cfWatchUrl = (uid: string) => `https://watch.cloudflarestream.com/${uid}`;
 
+// Provider-aware helpers — use these everywhere instead of cf* directly
+export const videoEmbedUrl = (uid: string, provider: "cloudflare" | "youtube" = "cloudflare") =>
+  provider === "youtube"
+    ? `https://www.youtube.com/embed/${uid}?rel=0`
+    : cfEmbedUrl(uid);
+
+export const videoThumbUrl = (uid: string, provider: "cloudflare" | "youtube" = "cloudflare") =>
+  provider === "youtube"
+    ? `https://img.youtube.com/vi/${uid}/hqdefault.jpg`
+    : cfThumbUrl(uid);
+
+export const videoWatchUrl = (uid: string, provider: "cloudflare" | "youtube" = "cloudflare") =>
+  provider === "youtube"
+    ? `https://www.youtube.com/watch?v=${uid}`
+    : cfWatchUrl(uid);
+
 const CoachVideos = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── File stored in a ref (NOT state) so React re-renders during upload
+  //    don't create additional references to the potentially large File object.
+  const videoFileRef = useRef<File | null>(null);
+  // We keep just the display metadata in state
+  const [videoFileName, setVideoFileName] = useState<string | null>(null);
+  const [videoFileSize, setVideoFileSize] = useState<number>(0);
+
+  // AbortController ref so we can cancel the in-flight XHR on unmount / cancel
+  const abortRef = useRef<(() => void) | null>(null);
+  const uploadTimedOutRef = useRef(false);
+
   const [teams, setTeams] = useState<Team[]>([]);
+  const [myTeamIds, setMyTeamIds] = useState<Set<string>>(new Set());
   const [videos, setVideos] = useState<CoachVideo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ytPlaylists, setYtPlaylists] = useState<string[]>([]);
   const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"mine" | "shared">("mine");
+  const [shareWithAll, setShareWithAll] = useState(false);
 
   // Upload form state
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedTeams, setSelectedTeams] = useState<Set<string>>(new Set());
@@ -95,23 +130,82 @@ const CoachVideos = () => {
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
-    const [teamsRes, videosRes] = await Promise.all([
-      (supabase as any).from("coach_teams").select("id, name").eq("coach_id", user.id).order("name"),
-      (supabase as any).from("coach_videos").select("*").eq("coach_id", user.id).order("created_at", { ascending: false }),
-    ]);
-    setTeams(teamsRes.data ?? []);
-    setVideos(videosRes.data ?? []);
-    setLoading(false);
+    try {
+      const [ownTeamsRes, assignedTcRes, videosRes, playlistsRes, profilesRes] = await Promise.all([
+        (supabase as any).from("coach_teams").select("id, name").eq("coach_id", user.id).order("name"),
+        // Only fetch team_ids — avoid the risky embedded join that may be blocked by RLS
+        (supabase as any).from("team_coaches").select("team_id").eq("user_id", user.id),
+        (supabase as any).from("coach_videos").select("*").order("created_at", { ascending: false }),
+        (supabase as any).from("youtube_playlists").select("title").order("title"),
+        (supabase as any).from("profiles").select("user_id, display_name"),
+      ]);
+
+      // Merge owned + assigned teams (deduplicated)
+      const ownTeams: Team[] = ownTeamsRes.data ?? [];
+      const assignedTeamIds: string[] = (assignedTcRes.data ?? []).map((r: any) => r.team_id as string);
+
+      // Fetch team records for assigned (not-owned) teams
+      let assignedTeams: Team[] = [];
+      const ownTeamIdSet = new Set(ownTeams.map(t => t.id));
+      const newlyAssignedIds = assignedTeamIds.filter(id => !ownTeamIdSet.has(id));
+      if (newlyAssignedIds.length > 0) {
+        const { data } = await (supabase as any)
+          .from("coach_teams")
+          .select("id, name")
+          .in("id", newlyAssignedIds);
+        assignedTeams = data ?? [];
+      }
+
+      const teamMap = new Map<string, Team>();
+      [...ownTeams, ...assignedTeams].forEach(t => teamMap.set(t.id, t));
+      setTeams(Array.from(teamMap.values()).sort((a, b) => a.name.localeCompare(b.name)));
+
+      // Build the full set of team IDs this coach belongs to, including any
+      // assigned teams whose records couldn't be fetched due to RLS
+      const allMyTeamIds = new Set([...teamMap.keys(), ...assignedTeamIds]);
+      setMyTeamIds(allMyTeamIds);
+
+      // Attach uploader display name to each video
+      const profileMap: Record<string, string> = {};
+      for (const p of (profilesRes.data ?? [])) {
+        profileMap[p.user_id] = p.display_name ?? "Coach";
+      }
+      if (videosRes.error) {
+        console.error("coach_videos fetch error:", videosRes.error);
+        toast({ title: "Could not load videos", description: videosRes.error.message, variant: "destructive" });
+      }
+      const enriched = (videosRes.data ?? []).map((v: any) => ({
+        ...v,
+        uploader_name: profileMap[v.coach_id] ?? "Coach",
+      }));
+      console.log(`fetchData: got ${enriched.length} videos`);
+      setVideos(enriched);
+      setYtPlaylists((playlistsRes.data ?? []).map((p: any) => p.title as string));
+    } catch (err) {
+      console.error("fetchData error:", err);
+      toast({ title: "Failed to load videos", description: String(err), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchData(); }, [user]);
+
+  // Abort any in-flight upload when component unmounts
+  useEffect(() => {
+    return () => {
+      abortRef.current?.();
+    };
+  }, []);
 
   const handleFileSelect = (file: File) => {
     if (!ACCEPTED_VIDEO_TYPES.includes(file.type)) {
       toast({ title: "Unsupported file type", description: "Please select an MP4, MOV, AVI, MKV, WEBM or MPEG video.", variant: "destructive" });
       return;
     }
-    setVideoFile(file);
+    videoFileRef.current = file;
+    setVideoFileName(file.name);
+    setVideoFileSize(file.size);
     if (!title) setTitle(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "));
     setUploadOpen(true);
   };
@@ -129,81 +223,139 @@ const CoachVideos = () => {
     setSelectedCategories(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
 
   const resetForm = () => {
-    setVideoFile(null); setTitle(""); setDescription("");
+    videoFileRef.current = null;
+    setVideoFileName(null);
+    setVideoFileSize(0);
+    setTitle(""); setDescription("");
     setSelectedTeams(new Set()); setSelectedCategories(new Set());
+    setShareWithAll(false);
     setUploadProgress(0); setUploadStatus("");
+    uploadTimedOutRef.current = false;
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleUpload = async () => {
-    if (!user || !videoFile || !title.trim()) return;
+    const file = videoFileRef.current;
+    if (!user || !file || !title.trim()) return;
+    // Nullify the state reference now — the ref keeps it alive until upload
+    // completes, but React won't see the File in state during re-renders
+    uploadTimedOutRef.current = false;
     setUploading(true); setUploadProgress(2); setUploadStatus("Preparing upload...");
-    try {
-      const { data, error: fnError } = await supabase.functions.invoke("youtube-upload-token", {
-        body: { title: title.trim(), description: description.trim(), fileSize: videoFile.size },
-      });
-      if (fnError || !data?.uploadUrl || !data?.uid)
-        throw new Error(data?.error ?? fnError?.message ?? "Failed to get upload URL. Ensure Cloudflare Stream is configured.");
 
-      const { uploadUrl, uid } = data;
-      setUploadProgress(5); setUploadStatus("Uploading video...");
-      await uploadFileWithProgress(videoFile, uploadUrl, pct => setUploadProgress(5 + Math.round(pct * 88)));
+    // Global 4-hour timeout guard
+    const globalTimeout = setTimeout(() => {
+      uploadTimedOutRef.current = true;
+      abortRef.current?.();
+    }, 4 * 60 * 60 * 1000);
+
+    try {
+      // Get a YouTube resumable upload session
+      const { data, error: fnError } = await supabase.functions.invoke("youtube-video-upload", {
+        body: { title: title.trim(), description: description.trim(), fileSize: file.size, mimeType: file.type || "video/mp4" },
+      });
+      if (fnError || !data?.uploadUrl)
+        throw new Error(data?.error ?? fnError?.message ?? "Failed to get YouTube upload URL.");
+
+      const { videoId, uploadUrl } = data;
+      setUploadProgress(5); setUploadStatus("Uploading to YouTube...");
+
+      // YouTube resumable upload: PUT the file directly to the session URI
+      await uploadToYouTube(file, uploadUrl, pct => setUploadProgress(5 + Math.round(pct * 88)));
+
+      // Release the large file from memory immediately after upload bytes are sent
+      videoFileRef.current = null;
+
       setUploadProgress(95); setUploadStatus("Saving to video library...");
 
       const { error: saveError } = await (supabase as any).from("coach_videos").insert({
-        coach_id:    user.id,
-        title:       title.trim(),
-        description: description.trim() || null,
-        video_uid:   uid,
-        team_ids:    Array.from(selectedTeams),
-        categories:  Array.from(selectedCategories),
-        visibility:  selectedTeams.size > 0 ? "team" : "all_coaches",
+        coach_id:       user.id,
+        title:          title.trim(),
+        description:    description.trim() || null,
+        video_uid:      videoId,
+        video_provider: "youtube",
+        team_ids:       Array.from(selectedTeams),
+        categories:     Array.from(selectedCategories),
+        visibility:     shareWithAll ? "all_coaches" : (selectedTeams.size > 0 ? "team" : "private"),
       });
       if (saveError) throw new Error(saveError.message);
 
       setUploadProgress(100); setUploadStatus("Done!");
-      toast({ title: "Video uploaded!", description: "It will be ready to stream within a minute." });
+      toast({ title: "Video uploaded!", description: "Processing on YouTube — available within a few minutes." });
       setUploadOpen(false); resetForm(); fetchData();
     } catch (err: any) {
-      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+      videoFileRef.current = null; // always free file on error
+      const msg = uploadTimedOutRef.current
+        ? "Upload timed out. Please try again with a smaller file or faster connection."
+        : err.message;
+      toast({ title: "Upload failed", description: msg, variant: "destructive" });
       setUploadStatus("Upload failed");
     } finally {
+      clearTimeout(globalTimeout);
       setUploading(false);
     }
   };
 
-  // XHR avoids fetch's internal request buffering, keeping large-file memory low
-  const xhrPatch = (uploadUrl: string, blob: Blob, offset: number, fileSize: number): Promise<void> =>
-    new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PATCH", uploadUrl);
-      xhr.setRequestHeader("Tus-Resumable", "1.0.0");
-      xhr.setRequestHeader("Upload-Offset", String(offset));
-      xhr.setRequestHeader("Upload-Length", String(fileSize));
-      xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
-      xhr.responseType = "text"; // prevent response buffering as ArrayBuffer
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`Upload failed at offset ${offset}: ${xhr.status}`));
-      };
-      xhr.onerror = () => reject(new Error(`Network error at offset ${offset}`));
-      xhr.send(blob);
-    });
-
-  const uploadFileWithProgress = async (
+  // YouTube resumable upload via XHR.
+  // OOM fix: state updates are THROTTLED - onProgress only fires when progress
+  // changes by >=2% (~50 re-renders max for any file size, not one per chunk).
+  // setUploadStatus is NOT called inside the loop (it never changes mid-loop).
+  // abortRef is populated so unmount/timeout can cancel the in-flight XHR.
+  // xhr.timeout = 90s per chunk prevents permanent hangs.
+  const uploadToYouTube = async (
     file: File,
     uploadUrl: string,
     onProgress: (pct: number) => void
   ): Promise<void> => {
-    const CHUNK = 5 * 1024 * 1024; // 5 MB
+    const CHUNK = 2 * 1024 * 1024;
     let offset = 0;
+    let lastReportedPct = 0;
+
     while (offset < file.size) {
-      const end = Math.min(offset + CHUNK, file.size);
-      await xhrPatch(uploadUrl, file.slice(offset, end), offset, file.size);
+      if (uploadTimedOutRef.current) throw new Error("Upload timed out.");
+
+      const end   = Math.min(offset + CHUNK, file.size);
+      const range = `bytes ${offset}-${end - 1}/${file.size}`;
+      let attempts = 0;
+      let status = 0;
+
+      while (true) {
+        status = await new Promise<number>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          abortRef.current = () => { xhr.abort(); reject(new Error("Upload cancelled.")); };
+          xhr.timeout = 90_000;
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Range", range);
+          xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+          xhr.onload    = () => { abortRef.current = null; resolve(xhr.status); };
+          xhr.onerror   = () => { abortRef.current = null; reject(new Error("Network error during upload")); };
+          xhr.ontimeout = () => { abortRef.current = null; reject(new Error("Chunk upload timed out (90s).")); };
+          xhr.send(file.slice(offset, end));
+        });
+
+        if (status === 200 || status === 201 || status === 308) break;
+        if (status === 403 || status === 404 || status === 410) {
+          throw new Error("YouTube upload session expired. Please start the upload again.");
+        }
+        if (status >= 500 && attempts < 3) {
+          attempts++;
+          setUploadStatus(`Connection issue - retrying (${attempts}/3)...`);
+          await new Promise(r => setTimeout(r, 1500 * attempts));
+          continue;
+        }
+        throw new Error(`YouTube upload failed at ${offset}: HTTP ${status}`);
+      }
+
       offset = end;
-      onProgress(offset / file.size);
-      // yield to browser task queue so GC can reclaim the sent chunk
-      await new Promise(r => setTimeout(r, 0));
+
+      // Only update React state when progress moves >=2%. Without this, every
+      // chunk fires a full re-render of the video grid, accumulating OOM pressure.
+      const currentPct = offset / file.size;
+      if (currentPct - lastReportedPct >= 0.02 || offset >= file.size) {
+        onProgress(currentPct);
+        lastReportedPct = currentPct;
+      }
+
+      await new Promise(r => setTimeout(r, 0)); // yield - lets GC run between chunks
     }
   };
 
@@ -223,6 +375,7 @@ const CoachVideos = () => {
       description: editDescription.trim() || null,
       categories: Array.from(editCategories),
       team_ids: Array.from(editTeams),
+      visibility: editVideo.visibility,
     }).eq("id", editVideo.id);
     if (error) {
       toast({ title: "Failed to save", description: error.message, variant: "destructive" });
@@ -233,6 +386,7 @@ const CoachVideos = () => {
         description: editDescription.trim() || null,
         categories: Array.from(editCategories),
         team_ids: Array.from(editTeams),
+        visibility: editVideo.visibility,
       } : v));
       toast({ title: "Video updated" });
       setEditVideo(null);
@@ -244,9 +398,15 @@ const CoachVideos = () => {
     if (!deleteId) return;
     const video = videos.find(v => v.id === deleteId);
     if (video) {
-      await supabase.functions.invoke("youtube-upload-token", {
-        body: { action: "delete", videoUid: video.video_uid },
-      });
+      if (video.video_provider === "youtube") {
+        await supabase.functions.invoke("youtube-video-upload", {
+          body: { action: "delete", videoId: video.video_uid },
+        });
+      } else {
+        await supabase.functions.invoke("youtube-upload-token", {
+          body: { action: "delete", videoUid: video.video_uid },
+        });
+      }
     }
     const { error } = await (supabase as any).from("coach_videos").delete().eq("id", deleteId);
     if (error) toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
@@ -257,9 +417,16 @@ const CoachVideos = () => {
   const teamName = (id: string) => teams.find(t => t.id === id)?.name ?? id;
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 
+  const myVideos = videos.filter(v =>
+    v.coach_id === user?.id ||
+    (v.team_ids?.length > 0 && v.team_ids.some(tid => myTeamIds.has(tid))) ||
+    v.visibility === "all_coaches"
+  );
+  const sharedVideos = videos.filter(v => v.coach_id !== user?.id && !v.team_ids?.some(tid => myTeamIds.has(tid)) && v.visibility === "all_coaches");
+  const activeVideos = activeTab === "mine" ? myVideos : sharedVideos;
   const filteredVideos = filterCategory === "all"
-    ? videos
-    : videos.filter(v => v.categories?.includes(filterCategory));
+    ? activeVideos
+    : activeVideos.filter(v => v.categories?.includes(filterCategory));
 
   return (
     <CoachLayout>
@@ -268,17 +435,39 @@ const CoachVideos = () => {
           <div>
             <h1 className="text-2xl font-bold">Video Library</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Upload videos from your device - hosted on Cloudflare Stream, shared privately with your teams.
+              Upload and share videos with your coaching team.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setShareOpen(true)} className="gap-2" disabled={videos.length === 0}>
-              <Share2 className="h-4 w-4" /> Share with Players
+            <Button variant="outline" onClick={() => setShareOpen(true)} className="gap-2" disabled={myVideos.length === 0}>
+              <Share2 className="h-4 w-4" /> Notify Players
             </Button>
             <Button onClick={() => setUploadOpen(true)} className="gap-2">
               <Upload className="h-4 w-4" /> Upload Video
             </Button>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+          <button
+            onClick={() => { setActiveTab("mine"); setFilterCategory("all"); }}
+            className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "mine" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Video className="h-3.5 w-3.5" /> My Videos
+            {myVideos.length > 0 && <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">{myVideos.length}</span>}
+          </button>
+          <button
+            onClick={() => { setActiveTab("shared"); setFilterCategory("all"); }}
+            className={`flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === "shared" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" /> From Other Coaches
+            {sharedVideos.length > 0 && <span className="ml-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-xs text-primary">{sharedVideos.length}</span>}
+          </button>
         </div>
 
         <input ref={fileInputRef} type="file" accept="video/*" className="hidden"
@@ -291,7 +480,7 @@ const CoachVideos = () => {
               onClick={() => setFilterCategory("all")}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${filterCategory === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
             >All</button>
-            {VIDEO_CATEGORIES.filter(c => videos.some(v => v.categories?.includes(c))).map(c => (
+            {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].filter(c => videos.some(v => v.categories?.includes(c))).map(c => (
               <button key={c} onClick={() => setFilterCategory(c)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${filterCategory === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
               >{c}</button>
@@ -300,7 +489,7 @@ const CoachVideos = () => {
         )}
 
         {/* Drop zone */}
-        {!loading && videos.length === 0 && (
+        {!loading && activeTab === "mine" && myVideos.length === 0 && (
           <div onDrop={handleDrop} onDragOver={e => e.preventDefault()} onClick={() => fileInputRef.current?.click()}
             className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 p-16 text-center cursor-pointer hover:bg-muted/60 transition-colors"
           >
@@ -310,15 +499,24 @@ const CoachVideos = () => {
           </div>
         )}
 
+        {/* Empty state for shared tab */}
+        {!loading && activeTab === "shared" && sharedVideos.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 p-16 text-center">
+            <Users className="h-12 w-12 text-muted-foreground" />
+            <p className="font-medium text-muted-foreground">No shared videos yet</p>
+            <p className="text-xs text-muted-foreground">When other coaches share videos with all coaches, they'll appear here.</p>
+          </div>
+        )}
+
         {/* Video grid */}
         {!loading && filteredVideos.length > 0 && (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
             {filteredVideos.map(video => (
               <Card key={video.id} className="overflow-hidden">
                 <div className="relative aspect-video bg-black">
                   {playingId === video.id ? (
                     <>
-                      <iframe src={`${cfEmbedUrl(video.video_uid)}?autoplay=true`}
+                      <iframe src={`${videoEmbedUrl(video.video_uid, video.video_provider)}?autoplay=true`}
                         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                         allowFullScreen className="absolute inset-0 w-full h-full"
                         onError={() => setPlayingId(null)} />
@@ -329,7 +527,7 @@ const CoachVideos = () => {
                     </>
                   ) : (
                     <>
-                      <img src={cfThumbUrl(video.video_uid)} alt={video.title}
+                      <img src={videoThumbUrl(video.video_uid, video.video_provider)} alt={video.title}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -344,32 +542,50 @@ const CoachVideos = () => {
                 </div>
                 <CardContent className="p-4 space-y-2">
                   <p className="font-semibold text-sm leading-snug truncate" title={video.title}>{video.title}</p>
+                  {activeTab === "shared" && video.uploader_name && (
+                    <p className="text-xs text-primary font-medium">by {video.uploader_name}</p>
+                  )}
                   {video.description && <p className="text-xs text-muted-foreground line-clamp-2">{video.description}</p>}
                   <div className="flex flex-wrap gap-1">
                     {(video.categories ?? []).map(c => <Badge key={c} variant="secondary" className="text-xs">{c}</Badge>)}
-                    {video.team_ids.map(id => <Badge key={id} variant="outline" className="text-xs">{teamName(id)}</Badge>)}
+                    {activeTab === "mine" && video.team_ids.map(id => <Badge key={id} variant="outline" className="text-xs">{teamName(id)}</Badge>)}
+                    {activeTab === "mine" && video.visibility === "all_coaches" && (
+                      <Badge variant="outline" className="text-xs border-green-500 text-green-600">Shared</Badge>
+                    )}
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-muted-foreground">{formatDate(video.created_at)}</span>
                     <div className="flex items-center gap-1">
+                      {video.coach_id === user?.id && (
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" title="Review video"
+                        onClick={() => navigate(`/coach/video-review/${video.id}`)}>
+                        <ClipboardList className="h-3.5 w-3.5" />
+                      </Button>
+                      )}
+                      {video.coach_id === user?.id && (
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" title="Edit"
                         onClick={() => openEdit(video)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
+                      )}
+                      {video.coach_id === user?.id && (
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" title="Notify players"
                         onClick={() => setNotifyVideo(video)}>
                         <Bell className="h-3.5 w-3.5" />
                       </Button>
+                      )}
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" asChild>
-                        <a href={cfWatchUrl(video.video_uid)} target="_blank" rel="noopener noreferrer" title="Open full screen">
+                        <a href={videoWatchUrl(video.video_uid, video.video_provider)} target="_blank" rel="noopener noreferrer" title="Open full screen">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                       </Button>
+                      {video.coach_id === user?.id && (
                       <Button size="icon" variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setDeleteId(video.id)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -392,7 +608,7 @@ const CoachVideos = () => {
       {/* Share with Players — triggered from header button, video picker first */}
       <NotifyVideoModal
         video={null}
-        allVideos={videos}
+        allVideos={myVideos}
         open={shareOpen}
         teams={teams}
         onClose={() => setShareOpen(false)}
@@ -404,7 +620,7 @@ const CoachVideos = () => {
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Upload Video</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
-            {!videoFile ? (
+            {!videoFileName ? (
               <div
                 onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
                 onDragOver={e => e.preventDefault()}
@@ -419,10 +635,10 @@ const CoachVideos = () => {
               <div className="flex items-center gap-3 rounded-lg bg-muted p-3">
                 <Video className="h-5 w-5 text-muted-foreground shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{videoFile.name}</p>
-                  <p className="text-xs text-muted-foreground">{(videoFile.size / 1024 / 1024).toFixed(1)} MB</p>
+                  <p className="text-sm font-medium truncate">{videoFileName}</p>
+                  <p className="text-xs text-muted-foreground">{(videoFileSize / 1024 / 1024).toFixed(1)} MB</p>
                 </div>
-                <button onClick={() => { setVideoFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                <button onClick={() => { videoFileRef.current = null; setVideoFileName(null); setVideoFileSize(0); if (fileInputRef.current) fileInputRef.current.value = ""; }}
                   className="text-muted-foreground hover:text-foreground" disabled={uploading}>
                   <X className="h-4 w-4" />
                 </button>
@@ -441,7 +657,7 @@ const CoachVideos = () => {
             <div className="space-y-2">
               <Label>Categories <span className="text-muted-foreground text-xs">(select all that apply)</span></Label>
               <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {VIDEO_CATEGORIES.map(c => (
+                {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].map(c => (
                   <label key={c} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                     <Checkbox checked={selectedCategories.has(c)} onCheckedChange={() => toggleCategory(c)} disabled={uploading} />
                     {c}
@@ -462,9 +678,14 @@ const CoachVideos = () => {
                 </div>
               </div>
             )}
-            <p className="text-xs text-muted-foreground bg-muted rounded-md px-3 py-2">
-              Videos are hosted privately on <strong>Cloudflare Stream</strong> - not publicly searchable.
-            </p>
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+              onClick={() => setShareWithAll(v => !v)}>
+              <Checkbox id="share-all" checked={shareWithAll} onCheckedChange={v => setShareWithAll(!!v)} disabled={uploading} />
+              <div>
+                <label htmlFor="share-all" className="text-sm font-medium cursor-pointer">Share with all coaches</label>
+                <p className="text-xs text-muted-foreground">Other coaches in the portal can view this video.</p>
+              </div>
+            </div>
             {uploading && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -476,7 +697,7 @@ const CoachVideos = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setUploadOpen(false); resetForm(); }} disabled={uploading}>Cancel</Button>
-            <Button onClick={handleUpload} disabled={uploading || !videoFile || !title.trim()} className="gap-2 min-w-32">
+            <Button onClick={handleUpload} disabled={uploading || !videoFileName || !title.trim()} className="gap-2 min-w-32">
               {uploading ? <>Uploading... {uploadProgress}%</> : <><Upload className="h-4 w-4" /> Upload</>}
             </Button>
           </DialogFooter>
@@ -499,7 +720,7 @@ const CoachVideos = () => {
             <div className="space-y-2">
               <Label>Categories</Label>
               <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {VIDEO_CATEGORIES.map(c => (
+                {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].map(c => (
                   <label key={c} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                     <Checkbox checked={editCategories.has(c)}
                       onCheckedChange={() => setEditCategories(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; })}
@@ -511,7 +732,7 @@ const CoachVideos = () => {
             </div>
             {teams.length > 0 && (
               <div className="space-y-2">
-                <Label>Share with teams <span className="text-muted-foreground text-xs">(leave blank = all coaches)</span></Label>
+                <Label>Share with teams</Label>
                 <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-1">
                   {teams.map(team => (
                     <label key={team.id} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
@@ -524,6 +745,16 @@ const CoachVideos = () => {
                 </div>
               </div>
             )}
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+              onClick={() => { if (!editSaving) { const isShared = editVideo?.visibility === "all_coaches"; const updated = { ...editVideo!, visibility: isShared ? "private" : "all_coaches" }; setEditVideo(updated); }}}>
+              <Checkbox id="edit-share-all" checked={editVideo?.visibility === "all_coaches"}
+                onCheckedChange={v => setEditVideo(prev => prev ? { ...prev, visibility: v ? "all_coaches" : "private" } : prev)}
+                disabled={editSaving} />
+              <div>
+                <label htmlFor="edit-share-all" className="text-sm font-medium cursor-pointer">Share with all coaches</label>
+                <p className="text-xs text-muted-foreground">Other coaches in the portal can view this video.</p>
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditVideo(null)} disabled={editSaving}>Cancel</Button>

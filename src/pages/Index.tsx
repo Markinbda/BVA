@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,7 +7,8 @@ import HeroSlider from "@/components/HeroSlider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Calendar, Users, Trophy, ArrowRight, Star, MapPin, ExternalLink, Radio } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Calendar, Users, Trophy, ArrowRight, Star, MapPin, ExternalLink, Radio, Volume2, VolumeX, KeyRound, Lock, Loader2 } from "lucide-react";
 import placeholderNews from "@/assets/placeholder-news.jpg";
 
 const fallbackNews = [
@@ -34,6 +35,16 @@ const Index = () => {
   const navigate = useNavigate();
   const [selectedSponsor, setSelectedSponsor] = useState<any | null>(null);
 
+  // Live stream passkey gate
+  const [passkeyInput, setPasskeyInput] = useState("");
+  const [passkeyError, setPasskeyError] = useState("");
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [unlockedStream, setUnlockedStream] = useState<{
+    cloudflare_playback_url: string | null;
+    stream_provider: string;
+    youtube_broadcast_id: string | null;
+  } | null>(null);
+
   const { data: newsArticles } = useQuery({
     queryKey: ["home-news"],
     queryFn: async () => {
@@ -58,21 +69,71 @@ const Index = () => {
     }
   });
 
-  // Poll every 30s for active live streams
+  // Poll every 30s for active live streams (no playback URL — gated behind passkey)
   const { data: liveStreams } = useQuery({
     queryKey: ["live-streams-active"],
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("live_streams")
-        .select("id, title, cloudflare_playback_url")
+        .select("id, title, stream_provider")
         .eq("is_live", true)
         .order("created_at", { ascending: false })
         .limit(1);
-      return (data ?? []) as { id: string; title: string; cloudflare_playback_url: string }[];
+      return (data ?? []) as { id: string; title: string; stream_provider: string }[];
     },
     refetchInterval: 30_000,
+    // Reset unlock state if the stream changes or goes offline
+    onSuccess: (data) => {
+      if (!data?.length) {
+        setUnlockedStream(null);
+        setPasskeyInput("");
+        setPasskeyError("");
+      }
+    },
   });
   const activeLiveStream = liveStreams?.[0] ?? null;
+  const livePlayerRef = useRef<HTMLIFrameElement>(null);
+  const [livePlayerMuted, setLivePlayerMuted] = useState(true);
+
+  const toggleLiveMute = () => {
+    const iframe = livePlayerRef.current;
+    if (!iframe?.contentWindow) return;
+    const next = !livePlayerMuted;
+    iframe.contentWindow.postMessage(
+      JSON.stringify({ event: next ? 'mute' : 'unmute' }),
+      '*'
+    );
+    setLivePlayerMuted(next);
+  };
+
+  const handlePasskeySubmit = async () => {
+    if (!activeLiveStream || !passkeyInput.trim()) return;
+    setPasskeyLoading(true);
+    setPasskeyError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-stream-passkey", {
+        body: { stream_id: activeLiveStream.id, passkey: passkeyInput.trim() },
+      });
+      if (error || !data?.valid) {
+        setPasskeyError("Incorrect passkey. Please try again.");
+      } else {
+        setUnlockedStream({
+          cloudflare_playback_url: data.cloudflare_playback_url ?? null,
+          stream_provider: data.stream_provider,
+          youtube_broadcast_id: data.youtube_broadcast_id ?? null,
+        });
+        setPasskeyInput("");
+        setPasskeyError("");
+        setTimeout(() => {
+          document.getElementById("live-stream-player")?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+    } catch {
+      setPasskeyError("Could not verify passkey. Please try again.");
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
 
   const displayNews = newsArticles?.length ? newsArticles : fallbackNews;
   const displayEvents = events?.length ? events : fallbackEvents;
@@ -86,41 +147,117 @@ const Index = () => {
       {/* ── Live Stream Banner ── */}
       {activeLiveStream && (
         <section className="bg-primary text-primary-foreground">
-          <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-3 w-3 relative shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
-              </span>
-              <div>
-                <p className="font-bold text-sm uppercase tracking-wide">Live Now</p>
-                <p className="text-sm text-primary-foreground/80">{activeLiveStream.title}</p>
+          {/* Top bar: Live indicator + passkey entry */}
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-3 w-3 relative shrink-0 mt-0.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+                </span>
+                <div>
+                  <p className="font-bold text-sm uppercase tracking-wide">Live Now</p>
+                  <p className="text-sm text-primary-foreground/80">{activeLiveStream.title}</p>
+                </div>
               </div>
+
+              {/* Passkey entry — shown when stream not yet unlocked */}
+              {!unlockedStream && (
+                <div className="flex flex-col gap-1 w-full sm:w-auto">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-primary-foreground/60" />
+                      <Input
+                        placeholder="Enter passkey to watch"
+                        value={passkeyInput}
+                        onChange={e => { setPasskeyInput(e.target.value.toUpperCase()); setPasskeyError(""); }}
+                        onKeyDown={e => { if (e.key === "Enter") handlePasskeySubmit(); }}
+                        className="pl-8 h-9 text-sm w-52 bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground placeholder:text-primary-foreground/50 font-mono tracking-widest uppercase"
+                        maxLength={8}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-accent text-accent-foreground hover:bg-accent/90 font-semibold gap-2 shrink-0 h-9"
+                      onClick={handlePasskeySubmit}
+                      disabled={passkeyLoading || !passkeyInput.trim()}
+                    >
+                      {passkeyLoading
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <><KeyRound className="h-4 w-4" /> Unlock</>}
+                    </Button>
+                  </div>
+                  {passkeyError && (
+                    <p className="text-xs text-red-200 font-medium pl-1">{passkeyError}</p>
+                  )}
+                  <p className="text-xs text-primary-foreground/60 pl-1">
+                    A passkey is required to watch this live stream.
+                  </p>
+                </div>
+              )}
+
+              {/* Already unlocked — scroll-to button */}
+              {unlockedStream && (
+                <Button
+                  size="sm"
+                  className="bg-accent text-accent-foreground hover:bg-accent/90 font-semibold gap-2 shrink-0"
+                  onClick={() => document.getElementById("live-stream-player")?.scrollIntoView({ behavior: "smooth" })}
+                >
+                  <Radio className="h-4 w-4" /> Watch Live
+                </Button>
+              )}
             </div>
-            <Button
-              size="sm"
-              className="bg-accent text-accent-foreground hover:bg-accent/90 font-semibold gap-2 shrink-0"
-              onClick={() => {
-                const el = document.getElementById("live-stream-player");
-                el?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              <Radio className="h-4 w-4" /> Watch Live
-            </Button>
           </div>
 
-          {/* Embedded player */}
-          <div id="live-stream-player" className="container mx-auto px-4 pb-6">
-            <div className="rounded-xl overflow-hidden aspect-video max-w-3xl mx-auto shadow-2xl bg-black">
-              <iframe
-                src={`${activeLiveStream.cloudflare_playback_url}${activeLiveStream.cloudflare_playback_url.includes('?') ? '&' : '?'}autoplay=true&muted=true`}
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full"
-                title={activeLiveStream.title}
-              />
+          {/* Embedded player — only shown after passkey unlocked */}
+          {unlockedStream && (
+            <div id="live-stream-player" className="container mx-auto px-4 pb-6">
+              <div className="rounded-xl overflow-hidden max-w-3xl mx-auto shadow-2xl bg-black">
+                <div className="relative aspect-video">
+                  {/* stream starting backdrop */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/60 bg-black select-none pointer-events-none z-0">
+                    <Radio className="h-8 w-8 animate-pulse" />
+                    <p className="text-sm">Stream starting — allow a few seconds…</p>
+                  </div>
+
+                  {unlockedStream.stream_provider === "youtube" && unlockedStream.youtube_broadcast_id ? (
+                    <iframe
+                      ref={livePlayerRef}
+                      src={`https://www.youtube.com/embed/${unlockedStream.youtube_broadcast_id}?autoplay=1&mute=1`}
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
+                      className="absolute inset-0 w-full h-full z-10"
+                      title={activeLiveStream.title}
+                    />
+                  ) : unlockedStream.cloudflare_playback_url ? (
+                    <iframe
+                      ref={livePlayerRef}
+                      src={`${unlockedStream.cloudflare_playback_url}${unlockedStream.cloudflare_playback_url.includes('?') ? '&' : '?'}autoplay=true&muted=true`}
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
+                      className="absolute inset-0 w-full h-full z-10"
+                      title={activeLiveStream.title}
+                    />
+                  ) : null}
+
+                  {/* Mute / Unmute overlay button (Cloudflare only) */}
+                  {unlockedStream.stream_provider !== "youtube" && (
+                    <button
+                      onClick={toggleLiveMute}
+                      className="absolute bottom-3 right-3 z-20 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-white text-xs font-medium hover:bg-black/80 transition-colors backdrop-blur-sm"
+                      title={livePlayerMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {livePlayerMuted
+                        ? <><VolumeX className="h-4 w-4" /> Unmute</>
+                        : <><Volume2 className="h-4 w-4" /> Mute</>}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </section>
       )}
 
@@ -142,7 +279,7 @@ const Index = () => {
                   <Link to={`/news/${article.id}`} key={article.id} className="group">
                     <Card className="overflow-hidden border-transparent shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 opacity-0 animate-slide-up" style={{ animationDelay: `${i * 120}ms` }}>
                       <div className="h-36 overflow-hidden">
-                        <img src={article.image_url || placeholderNews} alt={article.title} data-db-image="1" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                        <img src={article.image_url || placeholderNews} alt={article.title} data-db-image="1" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                       </div>
                       <CardHeader className="pb-2">
                         <span className="text-[11px] font-bold uppercase tracking-widest text-accent">{article.category}</span>
@@ -238,6 +375,7 @@ const Index = () => {
                   <img
                     src={s.logo_url}
                     alt={s.name}
+                    loading="lazy"
                     className="absolute inset-0 h-full w-full object-cover"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />

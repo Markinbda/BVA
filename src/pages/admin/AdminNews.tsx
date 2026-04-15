@@ -20,7 +20,7 @@ interface NewsArticle {
   published: boolean;
 }
 
-const emptyArticle = { title: "", date: new Date().toISOString().split("T")[0], category: "General", excerpt: "", content: "", image_url: "", published: false };
+const emptyArticle = { title: "", date: new Date().toISOString().split("T")[0], category: "General", excerpt: "", content: "", image_url: "", published: true };
 
 const AdminNews = () => {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
@@ -80,32 +80,32 @@ const AdminNews = () => {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium block mb-1.5">Title</label>
-              <Input value={editing.title || ""} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+              <Input value={editing.title || ""} onChange={(e) => { const v = e.target.value; setEditing(prev => ({ ...prev!, title: v })); }} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium block mb-1.5">Date</label>
-                <Input type="date" value={editing.date || ""} onChange={(e) => setEditing({ ...editing, date: e.target.value })} />
+                <Input type="date" value={editing.date || ""} onChange={(e) => { const v = e.target.value; setEditing(prev => ({ ...prev!, date: v })); }} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1.5">Category</label>
-                <Input value={editing.category || ""} onChange={(e) => setEditing({ ...editing, category: e.target.value })} />
+                <Input value={editing.category || ""} onChange={(e) => { const v = e.target.value; setEditing(prev => ({ ...prev!, category: v })); }} />
               </div>
             </div>
             <div>
               <label className="text-sm font-medium block mb-1.5">Excerpt (short summary)</label>
-              <Textarea value={editing.excerpt || ""} onChange={(e) => setEditing({ ...editing, excerpt: e.target.value })} rows={2} />
+              <Textarea value={editing.excerpt || ""} onChange={(e) => { const v = e.target.value; setEditing(prev => ({ ...prev!, excerpt: v })); }} rows={2} />
             </div>
             <div>
               <label className="text-sm font-medium block mb-1.5">Full Content</label>
-              <Textarea value={editing.content || ""} onChange={(e) => setEditing({ ...editing, content: e.target.value })} rows={8} />
+              <Textarea value={editing.content || ""} onChange={(e) => { const v = e.target.value; setEditing(prev => ({ ...prev!, content: v })); }} rows={8} />
             </div>
             <div>
               <label className="text-sm font-medium block mb-1.5">Image</label>
-              <ImageUpload value={editing.image_url || ""} onChange={(url) => setEditing({ ...editing, image_url: url })} folder="news" />
+              <ImageUpload value={editing.image_url || ""} onChange={(url) => setEditing(prev => ({ ...prev!, image_url: url }))} folder="news" />
             </div>
             <div className="flex items-center gap-2">
-              <input type="checkbox" id="published" checked={editing.published ?? false} onChange={(e) => setEditing({ ...editing, published: e.target.checked })} className="rounded" />
+              <input type="checkbox" id="published" checked={editing.published ?? true} onChange={(e) => { const v = e.target.checked; setEditing(prev => ({ ...prev!, published: v })); }} className="rounded" />
               <label htmlFor="published" className="text-sm font-medium">Published (visible on website)</label>
             </div>
             <Button onClick={handleSave} className="w-full"><Save className="h-4 w-4 mr-2" /> Save Article</Button>

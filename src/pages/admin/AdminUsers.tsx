@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AdminLayout from "@/components/admin/AdminLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, KeyRound, Pencil, Search, ShieldCheck, UserCog, UserPlus, UserX, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, EyeOff, KeyRound, Pencil, Search, ShieldCheck, UserCog, UserPlus, UserX, Users } from "lucide-react";
 import { ADMIN_PERMISSION_OPTIONS, hasSystemAccess } from "@/lib/adminPermissions";
 
 type AppRole = "admin" | "user";
@@ -378,6 +378,7 @@ const AdminUsers = () => {
   const [showAddUser, setShowAddUser] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [resetUser, setResetUser] = useState<UserRow | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
   const setUserState = (userId: string, update: (user: UserRow) => UserRow) => {
@@ -471,8 +472,6 @@ const AdminUsers = () => {
       return haystack.includes(query);
     });
   }, [searchQuery, users]);
-
-  const systemUsers = filteredUsers.filter((user) => user.isSystemUser);
 
   const handleRoleChange = async (userId: string, newRole: AppRole) => {
     setUserState(userId, (user) => ({ ...user, savingRole: true }));
@@ -592,15 +591,25 @@ const AdminUsers = () => {
     setUserState(userId, (user) => ({ ...user, ...updates }));
   };
 
+  const toggleExpanded = (userId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-3">
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Users className="h-6 w-6 text-primary" />
             <div>
               <h1 className="text-2xl font-bold text-foreground">Users</h1>
-              <p className="text-muted-foreground">Separate registered members from system users and assign only the admin areas they should access.</p>
+              <p className="text-sm text-muted-foreground">Manage members and assign system access.</p>
             </div>
           </div>
           <Button onClick={() => setShowAddUser(true)}>
@@ -613,226 +622,181 @@ const AdminUsers = () => {
         <EditUserDialog user={editUser} onClose={() => setEditUser(null)} onSaved={handleEditSaved} />
         <ResetPasswordDialog user={resetUser} onClose={() => setResetUser(null)} />
 
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Stats */}
+        <div className="grid gap-4 sm:grid-cols-3">
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">Registered users</p>
-              <p className="text-3xl font-bold text-foreground">{users.length}</p>
+            <CardContent className="pt-5 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Registered</p>
+              <p className="text-3xl font-bold text-foreground mt-1">{users.length}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">System users</p>
-              <p className="text-3xl font-bold text-foreground">{users.filter((user) => user.isSystemUser).length}</p>
+            <CardContent className="pt-5 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">System Users</p>
+              <p className="text-3xl font-bold text-foreground mt-1">{users.filter(u => u.isSystemUser).length}</p>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground">Admins</p>
-              <p className="text-3xl font-bold text-foreground">{users.filter((user) => user.role === "admin").length}</p>
+            <CardContent className="pt-5 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Admins</p>
+              <p className="text-3xl font-bold text-foreground mt-1">{users.filter(u => u.role === "admin").length}</p>
             </CardContent>
           </Card>
         </div>
 
-        <Card id="system-users">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              System Users{!loading && ` (${users.filter((user) => user.isSystemUser).length})`}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : systemUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No system users yet. Use the registered users list below to add one.</p>
-            ) : (
-              <div className="space-y-4">
-                {systemUsers.map((user) => (
-                  <div key={user.userId} className="rounded-xl border border-border bg-background p-4 shadow-sm">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-semibold text-foreground">{user.displayName}</h3>
-                          <Badge variant={user.role === "admin" ? "default" : "secondary"}>{user.role === "admin" ? "Admin" : "System user"}</Badge>
-                          {user.permissions.includes("content_editor") && <Badge variant="outline">Inline editor</Badge>}
-                        </div>
-                        <p className="text-sm text-muted-foreground">Joined {formatDate(user.createdAt)} • DOB {formatDate(user.dateOfBirth)}</p>
-                        <p className="text-sm text-muted-foreground">Member roles: {formatList(user.memberRoles)}</p>
-                        <p className="text-sm text-muted-foreground">Formats: {formatList(user.formats)} • Level of play: {user.experienceLevel || "—"}</p>
-                      </div>
-
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <Select value={user.role} onValueChange={(value) => handleRoleChange(user.userId, value as AppRole)}>
-                          <SelectTrigger className="w-[140px]">
-                            <SelectValue placeholder="Choose role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="user">user</SelectItem>
-                            <SelectItem value="admin">admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setEditUser(user)}
-                        >
-                          <Pencil className="mr-2 h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setResetUser(user)}
-                        >
-                          <KeyRound className="mr-2 h-3 w-3" />
-                          Password
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => handleSystemUserToggle(user, false)}
-                          disabled={user.savingAccess || user.savingRole}
-                        >
-                          <UserX className="mr-2 h-4 w-4" />
-                          {user.savingAccess ? "Saving…" : "Remove Access"}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 border-t border-border pt-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access boxes</p>
-                      {user.role === "admin" && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Admin role already unlocks all admin sections. Keep <strong>Inline editor</strong> enabled if this user should edit public page content.
-                        </p>
-                      )}
-                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                        {ADMIN_PERMISSION_OPTIONS.map((option) => {
-                          const controlledByAdmin = user.role === "admin" && !["content_editor"].includes(option.permission);
-                          const checked = controlledByAdmin || user.permissions.includes(option.permission) || (option.permission !== "content_editor" && user.permissions.includes("super_admin"));
-
-                          return (
-                            <label
-                              key={`${user.userId}-${option.permission}`}
-                              className={`flex items-start gap-3 rounded-lg border p-3 ${checked ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary disabled:opacity-60"
-                                checked={checked}
-                                disabled={user.savingAccess || controlledByAdmin}
-                                onChange={(event) => handlePermissionToggle(user, option.permission, event.target.checked)}
-                              />
-                              <span>
-                                <span className="block text-sm font-medium text-foreground">{option.label}</span>
-                                <span className="block text-xs text-muted-foreground">{option.description}</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+        {/* Search + list */}
+        <div className="rounded-xl border bg-card shadow-sm">
+          {/* Search bar */}
+          <div className="flex items-center gap-3 border-b px-4 py-3">
+            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by name, email, role, format, or level…"
+              className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 text-sm h-7"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="text-xs text-muted-foreground hover:text-foreground shrink-0">Clear</button>
             )}
-          </CardContent>
-        </Card>
+            <span className="text-xs text-muted-foreground shrink-0">{filteredUsers.length} user{filteredUsers.length !== 1 ? "s" : ""}</span>
+          </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                  <UserCog className="h-4 w-4 text-primary" />
-                  Registered Users{!loading && ` (${filteredUsers.length})`}
-                </CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">Search members and promote them to system users without showing internal IDs.</p>
-              </div>
-              <div className="relative w-full lg:max-w-sm">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search by name, role, format, or level"
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : filteredUsers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No registered users match that search.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-left text-muted-foreground">
-                      <th className="pb-2 pr-4 font-medium">Full Name</th>
-                      <th className="pb-2 pr-4 font-medium">Email</th>
-                      <th className="pb-2 pr-4 font-medium">Joined</th>
-                      <th className="pb-2 pr-4 font-medium">Role</th>
-                      <th className="pb-2 pr-4 font-medium">Date of Birth</th>
-                      <th className="pb-2 pr-4 font-medium">Level of Play</th>
-                      <th className="pb-2 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map((user) => (
-                      <tr key={user.userId} className="border-b last:border-0 align-top">
-                        <td className="py-3 pr-4 font-medium text-foreground">{user.displayName}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{user.email || <span className="italic text-muted-foreground/50">loading…</span>}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{formatDate(user.createdAt)}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{formatList(user.memberRoles)}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{formatDate(user.dateOfBirth)}</td>
-                        <td className="py-3 pr-4 text-muted-foreground">{user.experienceLevel || "—"}</td>
-                        <td className="py-3">
-                          <div className="flex flex-wrap gap-2 items-center">
-                            <Badge variant={user.isSystemUser ? "default" : "secondary"}>
-                              {user.isSystemUser ? (user.role === "admin" ? "Admin" : "System user") : "Member"}
-                            </Badge>
+          {/* User rows */}
+          {loading ? (
+            <div className="px-4 py-8 text-sm text-muted-foreground text-center">Loading…</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="px-4 py-8 text-sm text-muted-foreground text-center">No users found.</div>
+          ) : (
+            <div className="divide-y">
+              {filteredUsers.map(user => {
+                const isOpen = expandedIds.has(user.userId);
+                return (
+                  <div key={user.userId}>
+                    {/* Collapsed row — single line */}
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+                      onClick={() => toggleExpanded(user.userId)}
+                    >
+                      {isOpen
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      }
+                      <span className="font-medium text-sm text-foreground min-w-[140px]">{user.displayName}</span>
+                      <span className="text-sm text-muted-foreground truncate flex-1 hidden sm:block">
+                        {user.email || <span className="italic opacity-50">loading…</span>}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0 ml-auto">
+                        {user.role === "admin" && (
+                          <Badge className="text-xs gap-1"><ShieldCheck className="h-2.5 w-2.5" /> Admin</Badge>
+                        )}
+                        {user.isSystemUser && user.role !== "admin" && (
+                          <Badge variant="secondary" className="text-xs gap-1"><UserCog className="h-2.5 w-2.5" /> System</Badge>
+                        )}
+                        <span className="text-xs text-muted-foreground hidden md:block">{formatDate(user.createdAt)}</span>
+                      </div>
+                    </button>
+
+                    {/* Expanded panel */}
+                    {isOpen && (
+                      <div className="bg-muted/30 border-t px-5 py-4 space-y-4">
+                        {/* Detail grid */}
+                        <div className="grid gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                          <div><span className="text-muted-foreground">Email:</span> <span className="font-medium">{user.email || "—"}</span></div>
+                          <div><span className="text-muted-foreground">Phone:</span> <span className="font-medium">{user.phone || "—"}</span></div>
+                          <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{formatDate(user.createdAt)}</span></div>
+                          <div><span className="text-muted-foreground">DOB:</span> <span className="font-medium">{formatDate(user.dateOfBirth)}</span></div>
+                          <div><span className="text-muted-foreground">Roles:</span> <span className="font-medium">{formatList(user.memberRoles)}</span></div>
+                          <div><span className="text-muted-foreground">Formats:</span> <span className="font-medium">{formatList(user.formats)}</span></div>
+                          <div><span className="text-muted-foreground">Level:</span> <span className="font-medium">{user.experienceLevel || "—"}</span></div>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex flex-wrap gap-2 items-center">
+                          <Button size="sm" variant="outline" onClick={() => setEditUser(user)}>
+                            <Pencil className="mr-1.5 h-3 w-3" /> Edit
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setResetUser(user)}>
+                            <KeyRound className="mr-1.5 h-3 w-3" /> Password
+                          </Button>
+
+                          {user.isSystemUser ? (
+                            <>
+                              <Select
+                                value={user.role}
+                                onValueChange={v => handleRoleChange(user.userId, v as AppRole)}
+                              >
+                                <SelectTrigger className="h-8 w-[130px] text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="user">user</SelectItem>
+                                  <SelectItem value="admin">admin</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                                onClick={() => handleSystemUserToggle(user, false)}
+                                disabled={user.savingAccess}
+                              >
+                                <UserX className="mr-1.5 h-3 w-3" />
+                                {user.savingAccess ? "Saving…" : "Remove System Access"}
+                              </Button>
+                            </>
+                          ) : (
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => setEditUser(user)}
-                            >
-                              <Pencil className="mr-1 h-3 w-3" /> Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setResetUser(user)}
-                            >
-                              <KeyRound className="mr-1 h-3 w-3" /> Password
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant={user.isSystemUser ? "outline" : "default"}
-                              onClick={() => handleSystemUserToggle(user, !user.isSystemUser)}
+                              onClick={() => handleSystemUserToggle(user, true)}
                               disabled={user.savingAccess}
                             >
-                              {user.isSystemUser ? (
-                                <>
-                                  <UserX className="mr-2 h-4 w-4" /> Remove
-                                </>
-                              ) : (
-                                <>
-                                  <UserPlus className="mr-2 h-4 w-4" /> Make System User
-                                </>
-                              )}
+                              <UserPlus className="mr-1.5 h-3 w-3" />
+                              {user.savingAccess ? "Saving…" : "Make System User"}
                             </Button>
+                          )}
+                        </div>
+
+                        {/* Permission checkboxes — system users only */}
+                        {user.isSystemUser && (
+                          <div className="space-y-2 border-t pt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access Areas</p>
+                            {user.role === "admin" && (
+                              <p className="text-xs text-muted-foreground">Admin role already unlocks all admin sections. Keep <strong>Inline editor</strong> enabled if this user should edit public page content.</p>
+                            )}
+                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              {ADMIN_PERMISSION_OPTIONS.map(option => {
+                                const controlledByAdmin = user.role === "admin" && !["content_editor"].includes(option.permission);
+                                const checked = controlledByAdmin || user.permissions.includes(option.permission) || (option.permission !== "content_editor" && user.permissions.includes("super_admin"));
+                                return (
+                                  <label
+                                    key={`${user.userId}-${option.permission}`}
+                                    className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer ${checked ? "border-primary/40 bg-primary/5" : "border-border bg-card"}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary disabled:opacity-60"
+                                      checked={checked}
+                                      disabled={user.savingAccess || controlledByAdmin}
+                                      onChange={e => handlePermissionToggle(user, option.permission, e.target.checked)}
+                                    />
+                                    <span>
+                                      <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                                      <span className="block text-xs text-muted-foreground">{option.description}</span>
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </AdminLayout>
   );

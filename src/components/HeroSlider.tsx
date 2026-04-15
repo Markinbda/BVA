@@ -31,6 +31,7 @@ const FALLBACK_SLIDES: SlideData[] = [
 const HeroSlider = () => {
   const [slides, setSlides] = useState<SlideData[]>(FALLBACK_SLIDES);
   const [current, setCurrent] = useState(0);
+  const [prevSlide, setPrevSlide] = useState<number | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Load slides from Supabase; fall back to hardcoded defaults
@@ -60,10 +61,15 @@ const HeroSlider = () => {
     (index: number) => {
       if (isTransitioning) return;
       setIsTransitioning(true);
+      setPrevSlide(current);
       setCurrent(index);
-      setTimeout(() => setIsTransitioning(false), 700);
+      // Clear the previous slide from DOM after the crossfade completes
+      setTimeout(() => {
+        setIsTransitioning(false);
+        setPrevSlide(null);
+      }, 700);
     },
-    [isTransitioning]
+    [isTransitioning, current]
   );
 
   const next = useCallback(() => goTo((current + 1) % slides.length), [current, goTo]);
@@ -77,23 +83,29 @@ const HeroSlider = () => {
 
   return (
     <section className="relative h-[70vh] min-h-[500px] max-h-[800px] overflow-hidden bg-primary">
-      {/* Slides */}
-      {slides.map((slide, i) => (
-        <div
-          key={i}
-          className="absolute inset-0 transition-opacity duration-700 ease-in-out"
-          style={{ opacity: i === current ? 1 : 0, zIndex: i === current ? 1 : 0 }}
-        >
-          <img
-            src={slide.image}
-            alt={slide.title}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-          {/* Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-r from-primary/85 via-primary/50 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-primary/60 via-transparent to-primary/30" />
-        </div>
-      ))}
+      {/* Slides — only render the visible slide and (during crossfade) the previous one.
+           This avoids loading all 6 large images into memory simultaneously. */}
+      {slides.map((slide, i) => {
+        const isActive = i === current;
+        const isPrev = i === prevSlide;
+        if (!isActive && !isPrev) return null;
+        return (
+          <div
+            key={i}
+            className="absolute inset-0 transition-opacity duration-700 ease-in-out"
+            style={{ opacity: isActive ? 1 : 0, zIndex: isActive ? 1 : 0 }}
+          >
+            <img
+              src={slide.image}
+              alt={slide.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Overlay */}
+            <div className="absolute inset-0 bg-gradient-to-r from-primary/85 via-primary/50 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-primary/60 via-transparent to-primary/30" />
+          </div>
+        );
+      })}
 
       {/* Content */}
       <div className="relative z-10 flex h-full items-center">

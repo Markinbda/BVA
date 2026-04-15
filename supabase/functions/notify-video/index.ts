@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     // ── Load video ────────────────────────────────────────────────────────────
     const { data: video, error: videoErr } = await supabase
       .from("coach_videos")
-      .select("id, title, description, video_uid, coach_id")
+      .select("id, title, description, video_uid, video_provider, coach_id")
       .eq("id", video_id)
       .single();
 
@@ -100,7 +100,9 @@ Deno.serve(async (req: Request) => {
 
     if (!players.length) return err("No players with email addresses found.");
 
-    const watchUrl = `https://watch.cloudflarestream.com/${video.video_uid}`;
+    const watchUrl = (video as any).video_provider === "youtube"
+      ? `https://www.youtube.com/watch?v=${video.video_uid}`
+      : `https://watch.cloudflarestream.com/${video.video_uid}`;
     const recipients = players.map(p => p.email);
 
     // ── Send via send-coach-email function ────────────────────────────────────

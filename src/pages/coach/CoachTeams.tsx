@@ -69,11 +69,27 @@ const CoachTeams = () => {
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
-    const [teamsRes, playersRes] = await Promise.all([
+    // Fetch teams owned by this coach, plus teams they're assigned to via team_coaches
+    const [ownedRes, assignedRes, playersRes] = await Promise.all([
       (supabase as any).from("coach_teams").select("*").eq("coach_id", user.id).order("name"),
+      (supabase as any).from("team_coaches").select("team_id").eq("user_id", user.id),
       (supabase as any).from("coach_players").select("id, first_name, last_name, team, email").eq("coach_id", user.id),
     ]);
-    setTeams(teamsRes.data ?? []);
+    const ownedTeams = ownedRes.data ?? [];
+    const assignedTeamIds: string[] = (assignedRes.data ?? []).map((r: any) => r.team_id);
+    // Fetch assigned teams detail (exclude already-owned)
+    const ownedIds = ownedTeams.map((t: Team) => t.id);
+    const missingIds = assignedTeamIds.filter((id) => !ownedIds.includes(id));
+    let assignedTeams: Team[] = [];
+    if (missingIds.length > 0) {
+      const { data } = await (supabase as any)
+        .from("coach_teams")
+        .select("*")
+        .in("id", missingIds)
+        .order("name");
+      assignedTeams = data ?? [];
+    }
+    setTeams([...ownedTeams, ...assignedTeams]);
     setPlayers(playersRes.data ?? []);
     setLoading(false);
   };

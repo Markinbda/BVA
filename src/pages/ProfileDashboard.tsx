@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   User, Mail, Phone, MapPin, Calendar, Edit2, Plus, Trash2,
-  Camera, Trophy, Users, Shield, ChevronRight, Lock, Loader2, Heart,
+  Camera, Trophy, Users, Shield, ChevronRight, Lock, Loader2, Heart, ClipboardList,
 } from "lucide-react";
 import SocialTab from "@/components/SocialTab";
 
@@ -401,29 +401,38 @@ const ProfileDashboard = () => {
       {/* ── Tabs ── */}
       <div className="container mx-auto max-w-5xl px-4 py-8">
         <Tabs defaultValue="profile">
-          <TabsList className="mb-6 flex-wrap h-auto w-full sm:w-auto">
-            <TabsTrigger value="profile" className="flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" /> Profile
-            </TabsTrigger>
-            <TabsTrigger value="family" className="flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5" /> Family
-              {family.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-xs">{family.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="seasons" className="flex items-center gap-1.5">
-              <Trophy className="h-3.5 w-3.5" /> Season History
-              {seasons.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-xs">{seasons.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="social" className="flex items-center gap-1.5">
-              <Heart className="h-3.5 w-3.5" /> Social
-              {pendingFollows > 0 && (
-                <Badge className="ml-1 h-4 px-1.5 text-xs bg-accent text-white">{pendingFollows}</Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+            <TabsList className="flex-wrap h-auto w-full sm:w-auto">
+              <TabsTrigger value="profile" className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" /> Profile
+              </TabsTrigger>
+              <TabsTrigger value="family" className="flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" /> Family
+                {family.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-xs">{family.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="seasons" className="flex items-center gap-1.5">
+                <Trophy className="h-3.5 w-3.5" /> Season History
+                {seasons.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-xs">{seasons.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="social" className="flex items-center gap-1.5">
+                <Heart className="h-3.5 w-3.5" /> Social
+                {pendingFollows > 0 && (
+                  <Badge className="ml-1 h-4 px-1.5 text-xs bg-accent text-white">{pendingFollows}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <button
+              onClick={() => navigate("/my-notes")}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors shrink-0"
+            >
+              <ClipboardList className="h-4 w-4 text-primary" />
+              My Coach Notes
+            </button>
+          </div>
 
           {/* ─────────────────────────────────── Profile tab ── */}
           <TabsContent value="profile" className="space-y-5">

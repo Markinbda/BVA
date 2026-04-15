@@ -1,0 +1,1 @@
+﻿SELECT COUNT(*) as total FROM coach_videos;

@@ -13,18 +13,22 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Radio, Copy, ExternalLink, Square, Loader2, Video, Camera, CameraOff, Mic, MicOff, MonitorStop } from "lucide-react";
+import { Radio, Copy, ExternalLink, Square, Loader2, Video, Camera, CameraOff, Mic, MicOff, MonitorStop, SwitchCamera, Trash2, Settings2, KeyRound } from "lucide-react";
 
 interface LiveStream {
   id: string;
   title: string;
-  cloudflare_live_input_id: string;
-  cloudflare_playback_url: string;
+  cloudflare_live_input_id: string | null;
+  cloudflare_playback_url: string | null;
+  stream_provider: "cloudflare" | "youtube";
+  youtube_broadcast_id: string | null;
+  youtube_stream_id: string | null;
   rtmps_url: string | null;
   rtmps_stream_key: string | null;
   srt_url: string | null;
   srt_stream_id: string | null;
   webrtc_url: string | null;
+  passkey: string | null;
   is_live: boolean;
   created_at: string;
   ended_at: string | null;
@@ -36,8 +40,10 @@ function useBrowserStream() {
   const [localStream, setLocalStream]   = useState<MediaStream | null>(null);
   const [pc, setPc]                     = useState<RTCPeerConnection | null>(null);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [connecting, setConnecting]     = useState(false);
   const [cameraOn, setCameraOn]         = useState(true);
   const [micOn, setMicOn]               = useState(true);
+  const [facingMode, setFacingMode]     = useState<"user" | "environment">("user");
   const [browserError, setBrowserError] = useState<string | null>(null);
   const videoRef                        = useRef<HTMLVideoElement>(null);
 
@@ -45,13 +51,49 @@ function useBrowserStream() {
     if (videoRef.current && localStream) videoRef.current.srcObject = localStream;
   }, [localStream]);
 
-  const openCamera = async () => {
+  const openCamera = async (facing: "user" | "environment" = facingMode) => {
     setBrowserError(null);
+    // Stop any existing tracks first
+    localStream?.getTracks().forEach(t => t.stop());
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing },
+        audio: true,
+      });
       setLocalStream(stream);
+      setFacingMode(facing);
     } catch (e: any) {
       setBrowserError(e?.message ?? "Could not access camera/microphone. Check browser permissions.");
+    }
+  };
+
+  const flipCamera = async () => {
+    const next = facingMode === "user" ? "environment" : "user";
+    if (broadcasting && pc) {
+      // While live: replace the video track on the peer connection
+      setBrowserError(null);
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: next },
+          audio: false,
+        });
+        const newTrack = newStream.getVideoTracks()[0];
+        const sender = pc.getSenders().find(s => s.track?.kind === "video");
+        if (sender) await sender.replaceTrack(newTrack);
+        // Swap the video track in localStream preview
+        const oldTrack = localStream?.getVideoTracks()[0];
+        if (oldTrack) {
+          oldTrack.stop();
+          localStream?.removeTrack(oldTrack);
+        }
+        localStream?.addTrack(newTrack);
+        if (videoRef.current) videoRef.current.srcObject = localStream;
+        setFacingMode(next);
+      } catch (e: any) {
+        setBrowserError("Camera flip failed: " + (e?.message ?? "unknown error"));
+      }
+    } else {
+      await openCamera(next);
     }
   };
 
@@ -66,21 +108,23 @@ function useBrowserStream() {
   const startBroadcast = async (whipUrl: string) => {
     if (!localStream) return;
     setBrowserError(null);
+    setConnecting(true);
     try {
       const peerConn = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
         bundlePolicy: "max-bundle",
       });
-      localStream.getTracks().forEach(t => peerConn.addTrack(t, localStream));
+      // Use addTransceiver for reliable SDP negotiation
+      localStream.getVideoTracks().forEach(t => peerConn.addTransceiver(t, { direction: "sendonly" }));
+      localStream.getAudioTracks().forEach(t => peerConn.addTransceiver(t, { direction: "sendonly" }));
       const offer = await peerConn.createOffer();
       await peerConn.setLocalDescription(offer);
-      // Wait for ICE gathering (max 4 s)
+      // Wait for ICE gathering (max 6 s)
       await new Promise<void>(resolve => {
         if (peerConn.iceGatheringState === "complete") { resolve(); return; }
-        peerConn.addEventListener("icegatheringstatechange", () => {
-          if (peerConn.iceGatheringState === "complete") resolve();
-        });
-        setTimeout(resolve, 4000);
+        const done = () => { if (peerConn.iceGatheringState === "complete") resolve(); };
+        peerConn.addEventListener("icegatheringstatechange", done);
+        setTimeout(resolve, 6000);
       });
       const res = await fetch(whipUrl, {
         method: "POST",
@@ -96,7 +140,9 @@ function useBrowserStream() {
       setPc(peerConn);
       setBroadcasting(true);
     } catch (e: any) {
-      setBrowserError(e?.message ?? "Failed to start browser stream.");
+      setBrowserError(e?.message ?? "Failed to start browser stream. Check camera permissions and try again.");
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -116,8 +162,8 @@ function useBrowserStream() {
     setMicOn(v => !v);
   };
 
-  return { videoRef, localStream, broadcasting, cameraOn, micOn, browserError,
-           openCamera, closeCamera, startBroadcast, stopBroadcast, toggleCamera, toggleMic };
+  return { videoRef, localStream, broadcasting, connecting, cameraOn, micOn, facingMode, browserError,
+           openCamera, closeCamera, flipCamera, startBroadcast, stopBroadcast, toggleCamera, toggleMic };
 }
 
 const CoachLiveStream = () => {
@@ -132,12 +178,22 @@ const CoachLiveStream = () => {
   const [newTitle, setNewTitle]         = useState("");
   const [creating, setCreating]         = useState(false);
 
-  // Active stream detail dialog
+  // Active stream RTMPS/SRT credentials popup
+  const [rtmpsStream, setRtmpsStream]   = useState<LiveStream | null>(null);
+
+  // Platform selector in create dialog
+  const [streamPlatform, setStreamPlatform] = useState<"cloudflare" | "youtube">("cloudflare");
+
+  // Active stream detail dialog (preview)
   const [detailStream, setDetailStream] = useState<LiveStream | null>(null);
 
   // End stream confirm
   const [endId, setEndId]               = useState<string | null>(null);
   const [ending, setEnding]             = useState(false);
+
+  // Delete past stream
+  const [deleteId, setDeleteId]         = useState<string | null>(null);
+  const [deleting, setDeleting]         = useState(false);
 
   const browser = useBrowserStream();
 
@@ -158,16 +214,20 @@ const CoachLiveStream = () => {
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
     setCreating(true);
-    const { data, error } = await supabase.functions.invoke("cloudflare-live-stream", {
+    const fnName = streamPlatform === "youtube" ? "youtube-live-stream" : "cloudflare-live-stream";
+    const { data, error } = await supabase.functions.invoke(fnName, {
       body: { action: "create", title: newTitle.trim() },
     });
     if (error || data?.error) {
       toast({ title: "Failed to start stream", description: data?.error ?? error?.message, variant: "destructive" });
     } else {
-      toast({ title: "Live stream created!", description: "Stream from your browser camera or connect a broadcasting app." });
+      const desc = streamPlatform === "youtube"
+        ? "Stream from OBS via the RTMP credentials."
+        : "Stream directly from your browser camera, or connect a broadcasting app via RTMPS/SRT.";
+      toast({ title: "Live stream created!", description: desc });
       setCreateOpen(false);
       setNewTitle("");
-      setDetailStream(data as LiveStream);
+      setStreamPlatform("cloudflare");
       fetchStreams();
     }
     setCreating(false);
@@ -178,7 +238,9 @@ const CoachLiveStream = () => {
     setEnding(true);
     browser.stopBroadcast();
     browser.closeCamera();
-    const { data, error } = await supabase.functions.invoke("cloudflare-live-stream", {
+    const stream = streams.find(s => s.id === endId);
+    const fnName = stream?.stream_provider === "youtube" ? "youtube-live-stream" : "cloudflare-live-stream";
+    const { data, error } = await supabase.functions.invoke(fnName, {
       body: { action: "end", id: endId },
     });
     if (error || data?.error) {
@@ -195,6 +257,23 @@ const CoachLiveStream = () => {
     }
     setEnding(false);
     setEndId(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    const { error } = await (supabase as any)
+      .from("live_streams")
+      .delete()
+      .eq("id", deleteId);
+    if (error) {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Stream deleted" });
+      fetchStreams();
+    }
+    setDeleting(false);
+    setDeleteId(null);
   };
 
   const copy = (text: string, label: string) => {
@@ -243,9 +322,23 @@ const CoachLiveStream = () => {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setDetailStream(stream)}>
-                  <Video className="h-3.5 w-3.5" /> RTMPS / SRT Credentials
+              <div className="flex items-center gap-2 flex-wrap">
+                {stream.passkey && (
+                  <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/60 bg-amber-50 dark:bg-amber-950/20 px-3 py-1.5">
+                    <KeyRound className="h-3.5 w-3.5 text-amber-600" />
+                    <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Viewer passkey:</span>
+                    <span className="font-mono font-bold text-amber-800 dark:text-amber-300 tracking-widest text-sm">{stream.passkey}</span>
+                    <button
+                      className="ml-1 text-amber-600 hover:text-amber-800 transition-colors"
+                      title="Copy passkey"
+                      onClick={() => copy(stream.passkey!, "Viewer passkey")}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setRtmpsStream(stream)}>
+                  <Settings2 className="h-3.5 w-3.5" /> RTMPS / SRT
                 </Button>
                 <Button variant="destructive" size="sm" className="gap-1.5" onClick={() => setEndId(stream.id)}>
                   <Square className="h-3.5 w-3.5" /> End Stream
@@ -253,7 +346,8 @@ const CoachLiveStream = () => {
               </div>
             </CardContent>
 
-            {/* ── Browser Camera Streamer ── */}
+            {/* ── Browser Camera Streamer (Cloudflare only) ── */}
+            {stream.stream_provider !== "youtube" && (
             <div className="border-t px-4 pb-4 pt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium flex items-center gap-1.5">
@@ -284,7 +378,7 @@ const CoachLiveStream = () => {
 
               <div className="flex items-center gap-2 flex-wrap">
                 {!browser.localStream ? (
-                  <Button size="sm" className="gap-1.5" onClick={browser.openCamera}>
+                  <Button size="sm" className="gap-1.5" onClick={() => browser.openCamera()}>
                     <Camera className="h-3.5 w-3.5" /> Open Camera
                   </Button>
                 ) : (
@@ -297,10 +391,17 @@ const CoachLiveStream = () => {
                       onClick={browser.toggleMic} title={browser.micOn ? "Mute mic" : "Unmute mic"}>
                       {browser.micOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
                     </Button>
+                    <Button size="icon" variant="outline" className="h-8 w-8"
+                      onClick={browser.flipCamera} title={browser.facingMode === "user" ? "Switch to back camera" : "Switch to front camera"}>
+                      <SwitchCamera className="h-3.5 w-3.5" />
+                    </Button>
                     {!browser.broadcasting ? (
                       <Button size="sm" className="gap-1.5 bg-red-600 hover:bg-red-700 text-white"
-                        onClick={() => browser.startBroadcast(stream.webrtc_url ?? `https://customer-streams.cloudflarestream.com/${stream.cloudflare_live_input_id}/webRTC/publish`)}>
-                        <Radio className="h-3.5 w-3.5" /> Go Live
+                        disabled={browser.connecting}
+                        onClick={() => browser.startBroadcast(stream.webrtc_url ?? `https://customer-streams.cloudflarestream.com/${stream.cloudflare_live_input_id ?? ""}/webRTC/publish`)}>
+                        {browser.connecting
+                          ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Connecting...</>
+                          : <><Radio className="h-3.5 w-3.5" /> Go Live</>}
                       </Button>
                     ) : (
                       <Button size="sm" variant="destructive" className="gap-1.5" onClick={browser.stopBroadcast}>
@@ -317,6 +418,7 @@ const CoachLiveStream = () => {
                 Or tap <strong>RTMPS / SRT Credentials</strong> to connect OBS or another broadcasting app.
               </p>
             </div>
+            )}
           </Card>
         ))}
 
@@ -337,15 +439,17 @@ const CoachLiveStream = () => {
                       }
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                     {stream.recorded_video_uid && (
                       <Badge variant="secondary" className="text-xs gap-1">
                         <Video className="h-3 w-3" /> Recording Saved
                       </Badge>
                     )}
-                    {stream.cloudflare_playback_url && (
+                    {(stream.cloudflare_playback_url || stream.youtube_broadcast_id) && (
                       <a
-                        href={stream.cloudflare_playback_url}
+                        href={stream.stream_provider === "youtube" && stream.youtube_broadcast_id
+                          ? `https://www.youtube.com/watch?v=${stream.youtube_broadcast_id}`
+                          : stream.cloudflare_playback_url ?? "#"}
                         target="_blank" rel="noopener noreferrer"
                         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                         title="Open playback"
@@ -353,6 +457,13 @@ const CoachLiveStream = () => {
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     )}
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      title="Delete" onClick={() => setDeleteId(stream.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -382,8 +493,37 @@ const CoachLiveStream = () => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Give your stream a title. You can then stream directly from your browser camera, or connect a broadcasting app via RTMPS/SRT.
+              Give your stream a title and choose a platform. You can stream from your browser camera (Cloudflare) or connect OBS (either platform).
             </p>
+            <div className="space-y-1.5">
+              <Label>Platform</Label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStreamPlatform("cloudflare")}
+                  className={`flex-1 rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                    streamPlatform === "cloudflare"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="font-medium block">Cloudflare</span>
+                  <span className="text-xs text-muted-foreground">Browser cam + OBS (RTMPS/SRT)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStreamPlatform("youtube")}
+                  className={`flex-1 rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                    streamPlatform === "youtube"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <span className="font-medium block">YouTube</span>
+                  <span className="text-xs text-muted-foreground">OBS only via RTMP</span>
+                </button>
+              </div>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="stream-title">Stream Title</Label>
               <Input
@@ -405,7 +545,56 @@ const CoachLiveStream = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ── Stream Details Dialog ── */}
+      {/* ── RTMPS / SRT Credentials Popup ── */}
+      {rtmpsStream && (
+        <Dialog open={!!rtmpsStream} onOpenChange={v => { if (!v) setRtmpsStream(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4" /> Broadcasting Credentials
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-1">
+              <p className="text-xs text-muted-foreground">Use these credentials in OBS, StreamYard, or any RTMPS-compatible app.</p>
+              {rtmpsStream.rtmps_url && (
+                <Card>
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <CardTitle className="text-sm font-semibold">RTMPS</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 space-y-3">
+                    <CredentialRow label="Server URL" value={rtmpsStream.rtmps_url}
+                      onCopy={() => copy(rtmpsStream.rtmps_url!, "RTMPS URL")} />
+                    {rtmpsStream.rtmps_stream_key && (
+                      <CredentialRow label="Stream Key" value={rtmpsStream.rtmps_stream_key} masked
+                        onCopy={() => copy(rtmpsStream.rtmps_stream_key!, "Stream key")} />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+              {rtmpsStream.srt_url && (
+                <Card>
+                  <CardHeader className="pb-2 pt-3 px-4">
+                    <CardTitle className="text-sm font-semibold">SRT</CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 space-y-3">
+                    <CredentialRow label="SRT URL" value={rtmpsStream.srt_url}
+                      onCopy={() => copy(rtmpsStream.srt_url!, "SRT URL")} />
+                    {rtmpsStream.srt_stream_id && (
+                      <CredentialRow label="Stream ID" value={rtmpsStream.srt_stream_id}
+                        onCopy={() => copy(rtmpsStream.srt_stream_id!, "SRT Stream ID")} />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRtmpsStream(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* ── Stream Details Dialog (preview) ── */}
       {detailStream && (
         <Dialog open={!!detailStream} onOpenChange={v => { if (!v) setDetailStream(null); }}>
           <DialogContent className="sm:max-w-lg">
@@ -425,7 +614,13 @@ const CoachLiveStream = () => {
               {/* Playback preview */}
               <div className="rounded-lg overflow-hidden aspect-video bg-black">
                 <iframe
-                  src={`${detailStream.cloudflare_playback_url}${detailStream.cloudflare_playback_url.includes('?') ? '&' : '?'}autoplay=true&muted=true`}
+                  src={(() => {
+                  if (detailStream.stream_provider === "youtube" && detailStream.youtube_broadcast_id) {
+                    return `https://www.youtube.com/embed/${detailStream.youtube_broadcast_id}?autoplay=1`;
+                  }
+                  const url = detailStream.cloudflare_playback_url ?? "";
+                  return url + (url.includes('?') ? '&' : '?') + 'autoplay=true';
+                })()}
                   allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                   allowFullScreen
                   className="w-full h-full"
@@ -514,6 +709,25 @@ const CoachLiveStream = () => {
             >
               {ending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {ending ? "Ending..." : "End Stream"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* ── Delete Past Stream Confirm ── */}
+      <AlertDialog open={!!deleteId} onOpenChange={v => { if (!v && !deleting) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Stream Record?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the stream from your history. Any recording already saved to your Video Library will not be affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2">
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {deleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

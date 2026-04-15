@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, Video, Trash2, ExternalLink, Play, X, Search, Globe, GlobeLock, Bell, Pencil } from "lucide-react";
+import { Upload, Video, Trash2, ExternalLink, Play, X, Search, Globe, GlobeLock, Bell, Pencil, RefreshCw } from "lucide-react";
 import NotifyVideoModal from "@/components/coach/NotifyVideoModal";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -24,7 +24,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  VIDEO_CATEGORIES, cfEmbedUrl, cfThumbUrl, cfWatchUrl,
+  VIDEO_CATEGORIES, videoEmbedUrl, videoThumbUrl, videoWatchUrl,
 } from "@/pages/coach/CoachVideos";
 
 interface VideoRow {
@@ -33,6 +33,7 @@ interface VideoRow {
   title: string;
   description: string | null;
   video_uid: string;
+  video_provider: "cloudflare" | "youtube";
   team_ids: string[];
   categories: string[];
   visibility: string;
@@ -59,6 +60,7 @@ const AdminVideos = () => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [selectedTeams, setSelectedTeams] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("");
@@ -68,6 +70,8 @@ const AdminVideos = () => {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [notifyVideo, setNotifyVideo] = useState<VideoRow | null>(null);
   const [allTeams, setAllTeams] = useState<{id: string; name: string}[]>([]);
+  const [ytPlaylists, setYtPlaylists] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
   const [editVideo, setEditVideo] = useState<VideoRow | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -130,9 +134,25 @@ const AdminVideos = () => {
     setVideos((vids as VideoRow[]).map(v => ({ ...v, coach_email: emailMap[v.coach_id] ?? v.coach_id })));
     setLoading(false);
 
-    // Load all teams for notify modal
-    const { data: teamsData } = await (supabase as any).from("coach_teams").select("id, name").order("name");
+    // Load all teams for notify modal, and youtube playlists for category options
+    const [{ data: teamsData }, { data: playlistsData }] = await Promise.all([
+      (supabase as any).from("coach_teams").select("id, name").order("name"),
+      (supabase as any).from("youtube_playlists").select("title").order("title"),
+    ]);
     setAllTeams(teamsData ?? []);
+    setYtPlaylists((playlistsData ?? []).map((p: any) => p.title as string));
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    const { data, error } = await supabase.functions.invoke("youtube-sync", {});
+    if (error || data?.error) {
+      toast({ title: "Sync failed", description: data?.error ?? error?.message, variant: "destructive" });
+    } else {
+      toast({ title: "YouTube sync complete", description: `${data.imported} new video${data.imported !== 1 ? "s" : ""} imported, ${data.skipped} already existed.` });
+      fetchData();
+    }
+    setSyncing(false);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -159,67 +179,83 @@ const AdminVideos = () => {
   const toggleCategory = (c: string) =>
     setSelectedCategories(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
 
+  const toggleTeam = (id: string) =>
+    setSelectedTeams(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
   const resetForm = () => {
     setVideoFile(null); setTitle(""); setDescription("");
-    setSelectedCategories(new Set()); setUploadProgress(0); setUploadStatus("");
+    setSelectedCategories(new Set()); setSelectedTeams(new Set()); setUploadProgress(0); setUploadStatus("");
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const uploadToYouTube = async (
+    file: File,
+    uploadUrl: string,
+    onProgress: (pct: number) => void
+  ): Promise<void> => {
+    const CHUNK = 2 * 1024 * 1024; // 2 MB per chunk
+    let offset = 0;
+    while (offset < file.size) {
+      const end   = Math.min(offset + CHUNK, file.size);
+      const range = `bytes ${offset}-${end - 1}/${file.size}`;
+      let attempts = 0;
+      let status = 0;
+      while (true) {
+        status = await new Promise<number>((resolve, reject) => {
+          const chunk = file.slice(offset, end);
+          const xhr   = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Range", range);
+          xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+          xhr.onload  = () => resolve(xhr.status);
+          xhr.onerror = () => reject(new Error("Network error during upload"));
+          xhr.send(chunk);
+        });
+        if (status === 200 || status === 201 || status === 308) break;
+        if (status >= 500 && attempts < 3) {
+          attempts++;
+          setUploadStatus(`Connection issue — retrying (${attempts}/3)…`);
+          await new Promise(r => setTimeout(r, 1500 * attempts));
+          continue;
+        }
+        throw new Error(`YouTube upload failed at ${offset}: HTTP ${status}`);
+      }
+      offset = end;
+      onProgress(offset / file.size);
+      setUploadStatus("Uploading to YouTube…");
+      await new Promise(r => setTimeout(r, 0));
+    }
   };
 
   const handleUpload = async () => {
     if (!user || !videoFile || !title.trim()) return;
     setUploading(true); setUploadProgress(2); setUploadStatus("Preparing upload...");
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("youtube-upload-token", {
-        body: { title: title.trim(), description: description.trim(), fileSize: videoFile.size },
+      const { data, error: fnError } = await supabase.functions.invoke("youtube-video-upload", {
+        body: { title: title.trim(), description: description.trim(), fileSize: videoFile.size, mimeType: videoFile.type || "video/mp4" },
       });
-      if (fnError || !data?.uploadUrl || !data?.uid)
-        throw new Error(data?.error ?? fnError?.message ?? "Failed to get upload URL.");
+      if (fnError || !data?.uploadUrl)
+        throw new Error(data?.error ?? fnError?.message ?? "Failed to get YouTube upload URL.");
 
-      const { uploadUrl, uid } = data;
-      setUploadProgress(5); setUploadStatus("Uploading video...");
-
-      // XHR avoids fetch's internal request buffering, keeping large-file memory low
-      const xhrPatch = (url: string, blob: Blob, off: number, total: number): Promise<void> =>
-        new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("PATCH", url);
-          xhr.setRequestHeader("Tus-Resumable", "1.0.0");
-          xhr.setRequestHeader("Upload-Offset", String(off));
-          xhr.setRequestHeader("Upload-Length", String(total));
-          xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
-          xhr.responseType = "text";
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) resolve();
-            else reject(new Error(`Upload failed at offset ${off}: ${xhr.status}`));
-          };
-          xhr.onerror = () => reject(new Error(`Network error at offset ${off}`));
-          xhr.send(blob);
-        });
-
-      let offset = 0;
-      while (offset < videoFile.size) {
-        const end = Math.min(offset + 5 * 1024 * 1024, videoFile.size);
-        await xhrPatch(uploadUrl, videoFile.slice(offset, end), offset, videoFile.size);
-        offset = end;
-        setUploadProgress(5 + Math.round((offset / videoFile.size) * 88));
-        // yield to browser task queue so GC can reclaim the sent chunk
-        await new Promise(r => setTimeout(r, 0));
-      }
+      const { videoId, uploadUrl } = data;
+      setUploadProgress(5); setUploadStatus("Uploading to YouTube...");
+      await uploadToYouTube(videoFile, uploadUrl, pct => setUploadProgress(5 + Math.round(pct * 88)));
 
       setUploadProgress(95); setUploadStatus("Saving...");
       const { error: saveError } = await (supabase as any).from("coach_videos").insert({
-        coach_id:    user.id,
-        title:       title.trim(),
-        description: description.trim() || null,
-        video_uid:   uid,
-        team_ids:    [],
-        categories:  Array.from(selectedCategories),
-        visibility:  "all_coaches",
+        coach_id:       user.id,
+        title:          title.trim(),
+        description:    description.trim() || null,
+        video_uid:      videoId,
+        video_provider: "youtube",
+        team_ids:       Array.from(selectedTeams),
+        categories:     Array.from(selectedCategories),
+        visibility:     selectedTeams.size > 0 ? "team" : "all_coaches",
       });
       if (saveError) throw new Error(saveError.message);
 
       setUploadProgress(100); setUploadStatus("Done!");
-      toast({ title: "Video uploaded!" });
+      toast({ title: "Video uploaded!", description: "Processing on YouTube — available within a few minutes." });
       setUploadOpen(false); resetForm(); fetchData();
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -254,9 +290,15 @@ const AdminVideos = () => {
     if (!deleteId) return;
     const video = videos.find(v => v.id === deleteId);
     if (video) {
-      await supabase.functions.invoke("youtube-upload-token", {
-        body: { action: "delete", videoUid: video.video_uid },
-      });
+      if (video.video_provider === "youtube") {
+        await supabase.functions.invoke("youtube-video-upload", {
+          body: { action: "delete", videoId: video.video_uid },
+        });
+      } else {
+        await supabase.functions.invoke("youtube-upload-token", {
+          body: { action: "delete", videoUid: video.video_uid },
+        });
+      }
     }
     const { error } = await (supabase as any).from("coach_videos").delete().eq("id", deleteId);
     if (error) toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
@@ -274,9 +316,15 @@ const AdminVideos = () => {
             <h1 className="text-2xl font-bold">Video Library</h1>
             <p className="text-sm text-muted-foreground mt-1">All coach-uploaded videos. Admins can upload, tag, and delete any video.</p>
           </div>
-          <Button onClick={() => setUploadOpen(true)} className="gap-2">
-            <Upload className="h-4 w-4" /> Upload Video
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleSync} disabled={syncing} className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing…" : "Sync YouTube"}
+            </Button>
+            <Button onClick={() => setUploadOpen(true)} className="gap-2">
+              <Upload className="h-4 w-4" /> Upload Video
+            </Button>
+          </div>
         </div>
 
         <input ref={fileInputRef} type="file" accept="video/*" className="hidden"
@@ -292,7 +340,7 @@ const AdminVideos = () => {
             <SelectTrigger className="w-48"><SelectValue placeholder="All categories" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All categories</SelectItem>
-              {VIDEO_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterCoach} onValueChange={setFilterCoach}>
@@ -315,13 +363,13 @@ const AdminVideos = () => {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
             {filtered.map(video => (
               <Card key={video.id} className="overflow-hidden">
                 <div className="relative aspect-video bg-black">
                   {playingId === video.id ? (
                     <>
-                      <iframe src={`${cfEmbedUrl(video.video_uid)}?autoplay=true`}
+                      <iframe src={`${videoEmbedUrl(video.video_uid, video.video_provider)}?autoplay=true`}
                         allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                         allowFullScreen className="absolute inset-0 w-full h-full" />
                       <button onClick={() => setPlayingId(null)}
@@ -331,7 +379,7 @@ const AdminVideos = () => {
                     </>
                   ) : (
                     <>
-                      <img src={cfThumbUrl(video.video_uid)} alt={video.title}
+                      <img src={videoThumbUrl(video.video_uid, video.video_provider)} alt={video.title}
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -376,7 +424,7 @@ const AdminVideos = () => {
                         <Bell className="h-3.5 w-3.5" />
                       </Button>
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" asChild>
-                        <a href={cfWatchUrl(video.video_uid)} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /></a>
+                        <a href={videoWatchUrl(video.video_uid, video.video_provider)} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" /></a>
                       </Button>
                       <Button size="icon" variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -435,7 +483,7 @@ const AdminVideos = () => {
             <div className="space-y-2">
               <Label>Categories</Label>
               <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {VIDEO_CATEGORIES.map(c => (
+                {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].map(c => (
                   <label key={c} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                     <Checkbox checked={selectedCategories.has(c)} onCheckedChange={() => toggleCategory(c)} disabled={uploading} />
                     {c}
@@ -443,6 +491,19 @@ const AdminVideos = () => {
                 ))}
               </div>
             </div>
+            {allTeams.length > 0 && (
+              <div className="space-y-2">
+                <Label>Share with teams <span className="text-muted-foreground text-xs">(leave blank = all coaches)</span></Label>
+                <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-1">
+                  {allTeams.map(team => (
+                    <label key={team.id} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
+                      <Checkbox checked={selectedTeams.has(team.id)} onCheckedChange={() => toggleTeam(team.id)} disabled={uploading} />
+                      {team.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             {uploading && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-muted-foreground"><span>{uploadStatus}</span><span>{uploadProgress}%</span></div>
@@ -483,7 +544,7 @@ const AdminVideos = () => {
             <div className="space-y-2">
               <Label>Categories</Label>
               <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-                {VIDEO_CATEGORIES.map(c => (
+                {[...new Set([...VIDEO_CATEGORIES, ...ytPlaylists])].map(c => (
                   <label key={c} className="flex items-center gap-2 cursor-pointer rounded-md border border-border px-3 py-1.5 text-xs hover:bg-muted transition-colors">
                     <Checkbox checked={editCategories.has(c)}
                       onCheckedChange={() => setEditCategories(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; })}

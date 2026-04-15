@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
   Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
-  Tag, MapPin, ClipboardList, SlidersHorizontal, Video
+  Tag, MapPin, ClipboardList, SlidersHorizontal, Video, UserCog
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -24,6 +24,7 @@ const navItems = [
   { path: "/admin/sponsors", label: "Sponsors", icon: Heart, permission: "manage_sponsors" },
   { path: "/admin/leagues", label: "Leagues", icon: Trophy, permission: "manage_leagues" },
   { path: "/admin/videos", label: "Videos", icon: Video, permission: "manage_gallery" },
+  { path: "/admin/teams", label: "Team Coaches", icon: UserCog, permission: "manage_coaches" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
   { path: "/coach", label: "Coach Portal", icon: ClipboardList, permission: "manage_coaches" },

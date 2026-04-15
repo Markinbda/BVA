@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, ChevronDown, User, LogOut, ShieldCheck, Search } from "lucide-react";
+import { Menu, X, ChevronDown, User, LogOut, ShieldCheck, Search, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAdminEditMode } from "@/contexts/AdminEditModeContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -92,7 +92,7 @@ const Navbar = () => {
   const location = useLocation();
   const navRef = useRef<HTMLUListElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { user, isAdmin, canEditContent, signOut } = useAuth();
+  const { user, isAdmin, canEditContent, signOut, hasPermission } = useAuth();
   const { editMode, setEditMode } = useAdminEditMode();
 
   useEffect(() => {
@@ -233,6 +233,15 @@ const Navbar = () => {
                     <Search className="h-4 w-4" />
                     Find Players
                   </Link>
+                  {(isAdmin || hasPermission("manage_coaches")) && (
+                    <Link
+                      to="/coach"
+                      className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      <GraduationCap className="h-4 w-4" />
+                      Coach Portal
+                    </Link>
+                  )}
                   {isAdmin && (
                     <Link
                       to="/admin"
@@ -280,7 +289,7 @@ const Navbar = () => {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="border-t border-accent/20 bg-primary lg:hidden">
+        <div className="border-t border-accent/20 bg-primary lg:hidden overflow-y-auto max-h-[calc(100dvh-56px)]">
           <ul className="container mx-auto flex flex-col gap-1 px-4 py-4">
             {!user && (
               <li>
@@ -290,6 +299,13 @@ const Navbar = () => {
                 >
                   Sign In / Register
                 </button>
+              </li>
+            )}
+            {user && (isAdmin || hasPermission("manage_coaches")) && (
+              <li>
+                <Link to="/coach" className="block rounded-md px-4 py-3 font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors">
+                  Coach Portal
+                </Link>
               </li>
             )}
             {user && isAdmin && (

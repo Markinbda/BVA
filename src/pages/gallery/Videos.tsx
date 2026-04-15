@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Play, X, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { cfEmbedUrl, cfThumbUrl, cfWatchUrl, VIDEO_CATEGORIES } from "@/pages/coach/CoachVideos";
+import { videoEmbedUrl, videoThumbUrl, videoWatchUrl, VIDEO_CATEGORIES } from "@/pages/coach/CoachVideos";
 
 interface PublicVideo {
   id: string;
   title: string;
   description: string | null;
   video_uid: string;
+  video_provider: "cloudflare" | "youtube";
   categories: string[];
   created_at: string;
 }
@@ -36,7 +37,7 @@ const Videos = () => {
   useEffect(() => {
     (supabase as any)
       .from("coach_videos")
-      .select("id, title, description, video_uid, categories, created_at")
+      .select("id, title, description, video_uid, video_provider, categories, created_at")
       .eq("visibility", "public")
       .order("created_at", { ascending: false })
       .then(({ data }: { data: PublicVideo[] | null }) => {
@@ -101,7 +102,7 @@ const Videos = () => {
                     {playingId === video.id ? (
                       <>
                         <iframe
-                          src={`${cfEmbedUrl(video.video_uid)}?autoplay=true`}
+                          src={`${videoEmbedUrl(video.video_uid, video.video_provider)}?autoplay=true`}
                           allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                           allowFullScreen
                           className="absolute inset-0 w-full h-full"
@@ -116,7 +117,7 @@ const Videos = () => {
                     ) : (
                       <>
                         <img
-                          src={cfThumbUrl(video.video_uid)}
+                          src={videoThumbUrl(video.video_uid, video.video_provider)}
                           alt={video.title}
                           className="w-full h-full object-cover"
                           onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -145,7 +146,7 @@ const Videos = () => {
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-xs text-muted-foreground">{formatDate(video.created_at)}</span>
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground" asChild>
-                        <a href={cfWatchUrl(video.video_uid)} target="_blank" rel="noopener noreferrer" title="Open full screen">
+                        <a href={videoWatchUrl(video.video_uid, video.video_provider)} target="_blank" rel="noopener noreferrer" title="Open full screen">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                       </Button>

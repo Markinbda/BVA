@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, X, Save, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Save, ExternalLink, Eye, EyeOff } from "lucide-react";
 
 interface Sponsor {
   id: string;
@@ -70,6 +70,12 @@ const AdminSponsors = () => {
     if (!confirm("Delete this sponsor?")) return;
     await supabase.from("sponsors").delete().eq("id", id);
     toast({ title: "Sponsor deleted" });
+    fetchSponsors();
+  };
+
+  const handleToggleActive = async (s: Sponsor) => {
+    await supabase.from("sponsors").update({ active: !s.active }).eq("id", s.id);
+    toast({ title: s.active ? "Sponsor hidden" : "Sponsor activated" });
     fetchSponsors();
   };
 
@@ -202,6 +208,14 @@ const AdminSponsors = () => {
 
                   {/* Actions */}
                   <div className="flex gap-2 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={s.active ? "Hide from website" : "Show on website"}
+                      onClick={() => handleToggleActive(s)}
+                    >
+                      {s.active ? <Eye className="h-4 w-4 text-green-600" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => setEditing(s)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
