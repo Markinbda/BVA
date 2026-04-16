@@ -54,6 +54,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const isMountedRef = useRef(true);
 
+  const applyOwnerFallback = (email?: string | null) => {
+    if (!isOwnerFallbackEmail(email) || !isMountedRef.current) return;
+    setIsAdmin(true);
+    setCanEditContent(true);
+    setPermissions((prev) =>
+      Array.from(new Set([...prev, "admin_access", "super_admin", "manage_users", "manage_pages", "content_editor"]))
+    );
+  };
+
   const hasPermission = (required: string | string[]) => {
     const requiredList = Array.isArray(required) ? required : [required];
     if (isAdmin) return true;
@@ -111,6 +120,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!isMountedRef.current) return;
         setSession(session);
         setUser(session?.user ?? null);
+        applyOwnerFallback(session?.user?.email);
         if (session?.user && !initComplete) {
           await Promise.all([
             checkAdminRole(session.user.id, session.user.email),
@@ -129,6 +139,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!isMountedRef.current) return;
         setSession(session);
         setUser(session?.user ?? null);
+        applyOwnerFallback(session?.user?.email);
         if (session?.user) {
           await Promise.all([
             checkAdminRole(session.user.id, session.user.email),

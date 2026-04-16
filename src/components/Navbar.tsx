@@ -92,7 +92,7 @@ const Navbar = () => {
   const location = useLocation();
   const navRef = useRef<HTMLUListElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { user, isAdmin, isPlayer, canEditContent, signOut, hasPermission } = useAuth();
+  const { user, isAdmin, isSystemUser, isPlayer, canEditContent, signOut, hasPermission } = useAuth();
   const { editMode, setEditMode } = useAdminEditMode();
 
   useEffect(() => {
@@ -251,7 +251,7 @@ const Navbar = () => {
                       Coach Portal
                     </Link>
                   )}
-                  {isAdmin && (
+                  {(isAdmin || isSystemUser || hasPermission("admin_access")) && (
                     <Link
                       to="/admin"
                       className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
