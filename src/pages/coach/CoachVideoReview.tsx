@@ -111,6 +111,7 @@ const CoachVideoReview = () => {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedMicId, setSelectedMicId] = useState<string>("default");
+  const selectedMicIdRef = useRef<string>("default");
   const [hasPromptedMicPermission, setHasPromptedMicPermission] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -315,10 +316,14 @@ const CoachVideoReview = () => {
     const mics = devices.filter(d => d.kind === "audioinput");
     setAudioInputs(mics);
     if (mics.length > 0) {
-      const hasSelected = mics.some(m => m.deviceId === selectedMicId);
-      if (!hasSelected) setSelectedMicId(mics[0].deviceId || "default");
+      const hasSelected = mics.some(m => m.deviceId === selectedMicIdRef.current);
+      if (!hasSelected) {
+        const newId = mics[0].deviceId || "default";
+        selectedMicIdRef.current = newId;
+        setSelectedMicId(newId);
+      }
     }
-  }, [selectedMicId]);
+  }, []); // No selectedMicId dep — uses ref to prevent infinite re-run loop
 
   useEffect(() => {
     refreshAudioInputs();
@@ -589,7 +594,7 @@ const CoachVideoReview = () => {
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       Microphone
                     </label>
-                    <Select value={selectedMicId} onValueChange={setSelectedMicId}>
+                    <Select value={selectedMicId} onValueChange={(v) => { selectedMicIdRef.current = v; setSelectedMicId(v); }}>
                       <SelectTrigger className="h-9">
                         <SelectValue placeholder="Select microphone" />
                       </SelectTrigger>

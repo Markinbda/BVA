@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,10 @@ const HeroSlider = () => {
   const [current, setCurrent] = useState(0);
   const [prevSlide, setPrevSlide] = useState<number | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTransitioningRef = useRef(false);
+  const currentRef = useRef(0);
+  const slidesLengthRef = useRef(FALLBACK_SLIDES.length);
 
   // Load slides from Supabase; fall back to hardcoded defaults
   useEffect(() => {
@@ -43,15 +47,15 @@ const HeroSlider = () => {
         .eq("enabled", true)
         .order("sort_order");
       if (data && data.length > 0) {
-        setSlides(
-          data.map((s: any, i: number) => ({
+        const mapped = data.map((s: any, i: number) => ({
             image: s.image_url || FALLBACK_SLIDES[i % FALLBACK_SLIDES.length].image,
             title: s.title,
             subtitle: s.subtitle,
             description: s.description,
             link: s.link,
-          }))
-        );
+          }));
+        setSlides(mapped);
+        slidesLengthRef.current = mapped.length;
       }
     };
     load();
@@ -59,27 +63,39 @@ const HeroSlider = () => {
 
   const goTo = useCallback(
     (index: number) => {
-      if (isTransitioning) return;
+      if (isTransitioningRef.current) return;
+      isTransitioningRef.current = true;
       setIsTransitioning(true);
-      setPrevSlide(current);
+      setPrevSlide(currentRef.current);
+      currentRef.current = index;
       setCurrent(index);
-      // Clear the previous slide from DOM after the crossfade completes
-      setTimeout(() => {
+      // Clear any pending transition timeout before scheduling a new one
+      if (transitionTimeoutRef.current !== null) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+      transitionTimeoutRef.current = setTimeout(() => {
+        isTransitioningRef.current = false;
         setIsTransitioning(false);
         setPrevSlide(null);
+        transitionTimeoutRef.current = null;
       }, 700);
     },
-    [isTransitioning, current]
+    [] // No deps — uses refs to avoid recreating on every state change
   );
 
-  const next = useCallback(() => goTo((current + 1) % slides.length), [current, goTo]);
-  const prev = useCallback(() => goTo((current - 1 + slides.length) % slides.length), [current, goTo]);
+  const next = useCallback(() => goTo((currentRef.current + 1) % slidesLengthRef.current), [goTo]);
+  const prev = useCallback(() => goTo((currentRef.current - 1 + slidesLengthRef.current) % slidesLengthRef.current), [goTo]);
 
-  // Auto-advance
+  // Auto-advance — stable interval, never recreated (goTo and next are stable refs)
   useEffect(() => {
     const timer = setInterval(next, 6000);
-    return () => clearInterval(timer);
-  }, [next]);
+    return () => {
+      clearInterval(timer);
+      if (transitionTimeoutRef.current !== null) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <section className="relative h-[70vh] min-h-[500px] max-h-[800px] overflow-hidden bg-primary">

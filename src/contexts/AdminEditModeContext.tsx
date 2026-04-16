@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -100,9 +100,9 @@ export const AdminEditModeProvider = ({ children }: { children: React.ReactNode 
     setChanges([]);
   };
 
-  const registerRevertHandler = (handler: (changes: EditChange[]) => void) => {
+  const registerRevertHandler = useCallback((handler: (changes: EditChange[]) => void) => {
     setRevertHandler(() => handler);
-  };
+  }, []);
 
   useEffect(() => {
     const handleUnload = (event: BeforeUnloadEvent) => {

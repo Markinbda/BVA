@@ -41,7 +41,6 @@ interface EditableItem {
   label: string;
   selector: string;
   currentValue: string;
-  element: HTMLElement | HTMLImageElement;
 }
 
 // ── Stable CSS selector from element ────────────────────────────────────────
@@ -91,6 +90,7 @@ const shouldSkip = (el: Element) =>
 // ─────────────────────────────────────────────────────────────────────────────
 const EditSidebar = () => {
   const { canEditContent, isAdmin } = useAuth();
+  const canUseSidebar = canEditContent || isAdmin;
   const {
     editMode, setEditMode, changes, addChange,
     saveDraft, publishChanges, discardChanges, hasUnsavedChanges, registerRevertHandler,
@@ -125,6 +125,7 @@ const EditSidebar = () => {
 
   // ── Load published changes on route change ─────────────────────────────────
   useEffect(() => {
+    if (!canUseSidebar) return;
     selectorOverridesRef.current.clear();
     const pagePath = location.pathname;
     const load = async () => {
@@ -142,22 +143,11 @@ const EditSidebar = () => {
       requestAnimationFrame(() => requestAnimationFrame(() => applyChangesToDom(saved)));
     };
     load();
-  }, [location.pathname, applyChangesToDom]);
-
-  // ── Re-apply image overrides when React re-renders ─────────────────────────
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      selectorOverridesRef.current.forEach((url, selector) => {
-        const el = document.querySelector(selector);
-        if (el instanceof HTMLImageElement && el.src !== url) el.src = url;
-      });
-    });
-    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["src"] });
-    return () => observer.disconnect();
-  }, []);
+  }, [canUseSidebar, location.pathname, applyChangesToDom]);
 
   // ── Revert handler ─────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!canUseSidebar) return;
     registerRevertHandler((changesToRevert) => {
       changesToRevert.forEach((c) => {
         const el = safeQuerySelector(c.selector);
@@ -169,7 +159,7 @@ const EditSidebar = () => {
         }
       });
     });
-  }, [registerRevertHandler]);
+  }, [canUseSidebar, registerRevertHandler]);
 
   // ── Scan page for editable elements ───────────────────────────────────────
   const scanPage = useCallback(() => {
@@ -190,7 +180,6 @@ const EditSidebar = () => {
         label: text.slice(0, 60) + (text.length > 60 ? "…" : ""),
         selector: getSelector(el),
         currentValue: el.innerHTML,
-        element: el,
       });
     });
 
@@ -207,7 +196,6 @@ const EditSidebar = () => {
         label: el.alt || el.src.split("/").pop() || "Image",
         selector: getSelector(el),
         currentValue: el.src,
-        element: el,
       });
     });
 
@@ -216,14 +204,17 @@ const EditSidebar = () => {
 
   // Scan when edit mode turns on or route changes
   useEffect(() => {
+    if (!canUseSidebar) return;
     if (editMode && open) {
-      setTimeout(scanPage, 200);
+      const timer = setTimeout(scanPage, 200);
+      return () => clearTimeout(timer);
     }
     if (!editMode) setSelected(null);
-  }, [editMode, open, location.pathname, scanPage]);
+  }, [canUseSidebar, editMode, open, location.pathname, scanPage]);
 
   // ── Click-to-edit: clicking any element in edit mode opens sidebar ─────────
   useEffect(() => {
+    if (!canUseSidebar) return;
     if (!editMode) return;
 
     const TEXT_SELECTOR = TEXT_TAGS.map((t) => `body ${t.toLowerCase()}`).join(",");
@@ -251,7 +242,6 @@ const EditSidebar = () => {
           label: imgEl.alt || imgEl.src.split("/").pop() || "Image",
           selector,
           currentValue: imgEl.src,
-          element: imgEl,
         };
       } else if (textEl && !shouldSkip(textEl)) {
         const text = textEl.textContent?.trim() ?? "";
@@ -265,7 +255,6 @@ const EditSidebar = () => {
             label: text.slice(0, 60) + (text.length > 60 ? "…" : ""),
             selector,
             currentValue: textEl.innerHTML,
-            element: textEl,
           };
         }
       }
@@ -297,10 +286,11 @@ const EditSidebar = () => {
       document.removeEventListener("click", handleClick, true);
       document.getElementById("edit-mode-cursor")?.remove();
     };
-  }, [editMode, items.length, scanPage]);
+  }, [canUseSidebar, editMode, items.length, scanPage]);
 
   // ── Highlight selected element on page ────────────────────────────────────
   useEffect(() => {
+    if (!canUseSidebar) return;
     // Remove old highlight
     if (highlightRef.current) {
       highlightRef.current.remove();
@@ -333,6 +323,7 @@ const EditSidebar = () => {
 
   // ── Inject pulse animation ─────────────────────────────────────────────────
   useEffect(() => {
+    if (!canUseSidebar) return;
     const style = document.createElement("style");
     style.textContent = `
       @keyframes editPulse {
@@ -435,7 +426,7 @@ const EditSidebar = () => {
 
   // ─────────────────────────────────────────────────────────────────────────
   // Gate: only show for admins / content editors
-  if (!canEditContent && !isAdmin) return null;
+  if (!canUseSidebar) return null;
 
   return (
     <>

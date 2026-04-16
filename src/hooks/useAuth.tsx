@@ -3,6 +3,10 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasSystemAccess } from "@/lib/adminPermissions";
 
+const OWNER_FALLBACK_EMAILS = ["markinbda@outlook.com"];
+const isOwnerFallbackEmail = (email?: string | null) =>
+  !!email && OWNER_FALLBACK_EMAILS.includes(email.toLowerCase());
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -58,20 +62,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const isSystemUser = isAdmin || isLeagueDirector || hasSystemAccess(permissions);
 
-  const checkAdminRole = async (userId: string) => {
+  const checkAdminRole = async (userId: string, email?: string | null) => {
     const { data } = await supabase.rpc("has_role", {
       _user_id: userId,
       _role: "admin",
     } as any);
-    if (isMountedRef.current) setIsAdmin(!!data);
+    if (isMountedRef.current) setIsAdmin(!!data || isOwnerFallbackEmail(email));
   };
 
-  const checkUserPermissions = async (userId: string) => {
+  const checkUserPermissions = async (userId: string, email?: string | null) => {
     const { data } = await supabase.from<any>("user_permissions").select("permission").eq("user_id", userId);
     const loadedPermissions = data?.map((item: any) => item.permission as string) ?? [];
+    const effectivePermissions = isOwnerFallbackEmail(email)
+      ? Array.from(new Set([...loadedPermissions, "admin_access", "super_admin", "manage_users", "manage_pages", "content_editor"]))
+      : loadedPermissions;
     if (isMountedRef.current) {
-      setPermissions(loadedPermissions);
-      setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin", "manage_pages"].includes(permission)));
+      setPermissions(effectivePermissions);
+      setCanEditContent(
+        isOwnerFallbackEmail(email) ||
+        effectivePermissions.some((permission) => ["content_editor", "super_admin", "manage_pages"].includes(permission))
+      );
     }
   };
 
@@ -103,9 +113,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(session?.user ?? null);
         if (session?.user && !initComplete) {
           await Promise.all([
-            checkAdminRole(session.user.id),
+            checkAdminRole(session.user.id, session.user.email),
             checkLeagueDirectorRole(session.user.id),
-            checkUserPermissions(session.user.id),
+            checkUserPermissions(session.user.id, session.user.email),
             checkPlayerRole(session.user.email),
           ]);
         }
@@ -121,9 +131,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(session?.user ?? null);
         if (session?.user) {
           await Promise.all([
-            checkAdminRole(session.user.id),
+            checkAdminRole(session.user.id, session.user.email),
             checkLeagueDirectorRole(session.user.id),
-            checkUserPermissions(session.user.id),
+            checkUserPermissions(session.user.id, session.user.email),
             checkPlayerRole(session.user.email),
           ]);
         }
