@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { hasSystemAccess } from "@/lib/adminPermissions";
@@ -8,6 +8,7 @@ interface AuthContextType {
   session: Session | null;
   isAdmin: boolean;
   isLeagueDirector: boolean;
+  isPlayer: boolean;
   isSystemUser: boolean;
   permissions: string[];
   canEditContent: boolean;
@@ -24,6 +25,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   isAdmin: false,
   isLeagueDirector: false,
+  isPlayer: false,
   isSystemUser: false,
   permissions: [],
   canEditContent: false,
@@ -42,9 +44,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLeagueDirector, setIsLeagueDirector] = useState(false);
+  const [isPlayer, setIsPlayer] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [canEditContent, setCanEditContent] = useState(false);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   const hasPermission = (required: string | string[]) => {
     const requiredList = Array.isArray(required) ? required : [required];
@@ -59,14 +63,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       _user_id: userId,
       _role: "admin",
     } as any);
-    setIsAdmin(!!data);
+    if (isMountedRef.current) setIsAdmin(!!data);
   };
 
   const checkUserPermissions = async (userId: string) => {
     const { data } = await supabase.from<any>("user_permissions").select("permission").eq("user_id", userId);
     const loadedPermissions = data?.map((item: any) => item.permission as string) ?? [];
-    setPermissions(loadedPermissions);
-    setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin", "manage_pages"].includes(permission)));
+    if (isMountedRef.current) {
+      setPermissions(loadedPermissions);
+      setCanEditContent(loadedPermissions.some((permission) => ["content_editor", "super_admin", "manage_pages"].includes(permission)));
+    }
   };
 
   const checkLeagueDirectorRole = async (userId: string) => {
@@ -74,41 +80,65 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       _user_id: userId,
       _role: "league_director",
     } as any);
-    setIsLeagueDirector(!!data);
+    if (isMountedRef.current) setIsLeagueDirector(!!data);
+  };
+
+  const checkPlayerRole = async (email?: string | null) => {
+    if (!email) { if (isMountedRef.current) setIsPlayer(false); return; }
+    const { count } = await (supabase as any)
+      .from("coach_players")
+      .select("id", { count: "exact", head: true })
+      .eq("email", email);
+    if (isMountedRef.current) setIsPlayer((count ?? 0) > 0);
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
+    let initComplete = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
+        if (!isMountedRef.current) return;
         setSession(session);
         setUser(session?.user ?? null);
-        if (session?.user) {
-          setTimeout(() => {
-            checkAdminRole(session.user.id);
-            checkLeagueDirectorRole(session.user.id);
-            checkUserPermissions(session.user.id);
-          }, 0);
-        } else {
-          setIsAdmin(false);
-          setPermissions([]);
-          setCanEditContent(false);
+        if (session?.user && !initComplete) {
+          await Promise.all([
+            checkAdminRole(session.user.id),
+            checkLeagueDirectorRole(session.user.id),
+            checkUserPermissions(session.user.id),
+            checkPlayerRole(session.user.email),
+          ]);
         }
-        setLoading(false);
+        if (isMountedRef.current) setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        checkAdminRole(session.user.id);
-        checkLeagueDirectorRole(session.user.id);
-        checkUserPermissions(session.user.id);
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMountedRef.current) return;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await Promise.all([
+            checkAdminRole(session.user.id),
+            checkLeagueDirectorRole(session.user.id),
+            checkUserPermissions(session.user.id),
+            checkPlayerRole(session.user.email),
+          ]);
+        }
+        initComplete = true;
+      } finally {
+        if (isMountedRef.current) setLoading(false);
       }
-      setLoading(false);
-    });
+    };
 
-    return () => subscription.unsubscribe();
+    initAuth();
+
+    return () => {
+      isMountedRef.current = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -140,12 +170,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
     setIsAdmin(false);
     setIsLeagueDirector(false);
+    setIsPlayer(false);
     setPermissions([]);
     setCanEditContent(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isLeagueDirector, isSystemUser, permissions, canEditContent, loading, hasPermission, signIn, signUp, verifyOtp, signOut }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isLeagueDirector, isPlayer, isSystemUser, permissions, canEditContent, loading, hasPermission, signIn, signUp, verifyOtp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

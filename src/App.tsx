@@ -50,8 +50,10 @@ import EditSidebar from "@/components/admin/EditSidebar";
 import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
 import MemberRegistration from "./pages/MemberRegistration";
 import ProfileDashboard from "./pages/ProfileDashboard";
-import PlayerNotesView from "./pages/PlayerNotesView";
+import WatchVideo from "./pages/WatchVideo";
 import PlayerSearch from "./pages/PlayerSearch";
+import PlayerPortal from "./pages/player/PlayerPortal";
+import PlayerRoute from "@/components/player/PlayerRoute";
 import LeagueStandings from "./pages/LeagueStandings";
 // About sub-pages
 import Mission from "./pages/about/Mission";
@@ -178,7 +180,9 @@ const App = () => (
 
             <Route path="/member-registration" element={<MemberRegistration />} />
             <Route path="/profile" element={<ProfileDashboard />} />
-            <Route path="/my-notes" element={<PlayerNotesView />} />
+            <Route path="/player" element={<PlayerRoute><PlayerPortal /></PlayerRoute>} />
+            <Route path="/my-notes" element={<PlayerRoute><PlayerPortal /></PlayerRoute>} />
+            <Route path="/watch/:token" element={<WatchVideo />} />
             <Route path="/players" element={<PlayerSearch />} />
 
             {/* Coach portal */}

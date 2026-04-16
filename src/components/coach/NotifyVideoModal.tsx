@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +38,7 @@ interface Props {
 
 export default function NotifyVideoModal({ video: videoProp, teams, onClose, onVisibilityChange, allVideos, open }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // When allVideos is provided, we manage the selected video internally
   const [pickedVideo, setPickedVideo] = useState<CoachVideo | null>(null);
@@ -68,24 +70,31 @@ export default function NotifyVideoModal({ video: videoProp, teams, onClose, onV
       const tName = teams.find(t => t.id === selectedTeamId)?.name;
       loadPlayers([selectedTeamId], tName ? [tName] : []);
     }
-  }, [selectedTeamId, video]);
+  }, [selectedTeamId, video, user]);
 
   // Players can be linked by team_id UUID (new) or by team text field (legacy).
-  // Query both and merge to avoid missing players added before the FK was used.
+  // Query both direct tables (own players only via RLS) AND the RPC (assigned-team players).
   const loadPlayers = async (teamIds: string[], teamNames: string[] = []) => {
     if (!teamIds.length && !teamNames.length) { setPlayers([]); return; }
     setLoadingPlayers(true);
-    const [byId, byName] = await Promise.all([
+    const [byId, byName, rpcRes] = await Promise.all([
       teamIds.length
         ? (supabase as any).from("coach_players").select("id, first_name, last_name, email").in("team_id", teamIds)
         : Promise.resolve({ data: [] }),
       teamNames.length
         ? (supabase as any).from("coach_players").select("id, first_name, last_name, email").in("team", teamNames)
         : Promise.resolve({ data: [] }),
+      user
+        ? (supabase as any).rpc("get_players_for_assigned_teams", { p_user_id: user.id })
+        : Promise.resolve({ data: [] }),
     ]);
+    // Filter RPC results to only match selected teams
+    const rpcPlayers: Player[] = (rpcRes.data ?? []).filter((p: any) =>
+      teamIds.includes(p.team_id) || teamNames.includes(p.team)
+    );
     // Deduplicate by id, then sort
     const map = new Map<string, Player>();
-    [...(byId.data ?? []), ...(byName.data ?? [])].forEach((p: Player) => map.set(p.id, p));
+    [...(byId.data ?? []), ...(byName.data ?? []), ...rpcPlayers].forEach((p: Player) => map.set(p.id, p));
     setPlayers([...map.values()].sort((a, b) => a.last_name.localeCompare(b.last_name)));
     setLoadingPlayers(false);
   };

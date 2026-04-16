@@ -3,9 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Newspaper, CalendarDays, Image, Heart, Users } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const AdminDashboard = () => {
+  const { isAdmin, isLeagueDirector, loading } = useAuth();
+
+  if (!loading && !isAdmin && !isLeagueDirector) {
+    return <Navigate to="/coach" replace />;
+  }
   const [counts, setCounts] = useState({ news: 0, events: 0, gallery: 0, sponsors: 0, users: 0 });
 
   useEffect(() => {

@@ -144,16 +144,13 @@ const CoachVideos = () => {
       const ownTeams: Team[] = ownTeamsRes.data ?? [];
       const assignedTeamIds: string[] = (assignedTcRes.data ?? []).map((r: any) => r.team_id as string);
 
-      // Fetch team records for assigned (not-owned) teams
+      // Fetch team records for assigned (not-owned) teams via SECURITY DEFINER RPC (bypasses RLS)
       let assignedTeams: Team[] = [];
       const ownTeamIdSet = new Set(ownTeams.map(t => t.id));
-      const newlyAssignedIds = assignedTeamIds.filter(id => !ownTeamIdSet.has(id));
-      if (newlyAssignedIds.length > 0) {
-        const { data } = await (supabase as any)
-          .from("coach_teams")
-          .select("id, name")
-          .in("id", newlyAssignedIds);
-        assignedTeams = data ?? [];
+      const { data: assignedRpcData } = await (supabase as any)
+        .rpc("get_assigned_teams_for_user", { p_user_id: user.id });
+      if (assignedRpcData) {
+        assignedTeams = (assignedRpcData as Team[]).filter(t => !ownTeamIdSet.has(t.id));
       }
 
       const teamMap = new Map<string, Team>();
@@ -306,7 +303,7 @@ const CoachVideos = () => {
     uploadUrl: string,
     onProgress: (pct: number) => void
   ): Promise<void> => {
-    const CHUNK = 2 * 1024 * 1024;
+    const CHUNK = 8 * 1024 * 1024;
     let offset = 0;
     let lastReportedPct = 0;
 
@@ -322,13 +319,13 @@ const CoachVideos = () => {
         status = await new Promise<number>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           abortRef.current = () => { xhr.abort(); reject(new Error("Upload cancelled.")); };
-          xhr.timeout = 90_000;
+          xhr.timeout = 300_000;
           xhr.open("PUT", uploadUrl);
           xhr.setRequestHeader("Content-Range", range);
           xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
           xhr.onload    = () => { abortRef.current = null; resolve(xhr.status); };
           xhr.onerror   = () => { abortRef.current = null; reject(new Error("Network error during upload")); };
-          xhr.ontimeout = () => { abortRef.current = null; reject(new Error("Chunk upload timed out (90s).")); };
+          xhr.ontimeout = () => { abortRef.current = null; reject(new Error("Chunk upload timed out (5 minutes).")); };
           xhr.send(file.slice(offset, end));
         });
 
@@ -499,6 +496,12 @@ const CoachVideos = () => {
           </div>
         )}
 
+        {uploading && (
+          <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            Upload in progress. Video grid preview is paused to keep the browser stable.
+          </div>
+        )}
+
         {/* Empty state for shared tab */}
         {!loading && activeTab === "shared" && sharedVideos.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-border bg-muted/40 p-16 text-center">
@@ -509,7 +512,7 @@ const CoachVideos = () => {
         )}
 
         {/* Video grid */}
-        {!loading && filteredVideos.length > 0 && (
+        {!loading && !uploading && filteredVideos.length > 0 && (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
             {filteredVideos.map(video => (
               <Card key={video.id} className="overflow-hidden">
@@ -556,7 +559,7 @@ const CoachVideos = () => {
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-muted-foreground">{formatDate(video.created_at)}</span>
                     <div className="flex items-center gap-1">
-                      {video.coach_id === user?.id && (
+                      {activeTab === "mine" && (
                       <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" title="Review video"
                         onClick={() => navigate(`/coach/video-review/${video.id}`)}>
                         <ClipboardList className="h-3.5 w-3.5" />

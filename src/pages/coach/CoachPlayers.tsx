@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
@@ -33,6 +33,7 @@ interface Player {
   date_of_birth: string | null;
   age: number | null;
   team: string;
+  team_id: string | null;
   height: string | null;
   weight: string | null;
   volleyball_position: string | null;
@@ -46,6 +47,7 @@ const emptyForm = (): Omit<Player, "id"> => ({
   date_of_birth: null,
   age: null,
   team: "",
+  team_id: null,
   height: "",
   weight: "",
   volleyball_position: null,
@@ -61,6 +63,7 @@ interface Team {
 const CoachPlayers = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMountedRef = useRef(true);
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,19 +74,36 @@ const CoachPlayers = () => {
   const [saving, setSaving] = useState(false);
 
   const fetchPlayers = async () => {
-    if (!user) return;
+    if (!user || !isMountedRef.current) return;
     setLoading(true);
-    const [playersRes, teamsRes] = await Promise.all([
+    const [playersRes, teamsRes, assignedPlayersRes, assignedTeamsRes] = await Promise.all([
       (supabase as any).from("coach_players").select("*").eq("coach_id", user.id).order("last_name"),
       (supabase as any).from("coach_teams").select("id, name").eq("coach_id", user.id).order("name"),
+      (supabase as any).rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
+      (supabase as any).rpc("get_assigned_teams_for_user", { p_user_id: user.id }),
     ]);
+    if (!isMountedRef.current) return;
     if (playersRes.error) toast({ title: "Failed to load players", description: playersRes.error.message, variant: "destructive" });
-    setPlayers(playersRes.data ?? []);
-    setTeams(teamsRes.data ?? []);
-    setLoading(false);
+    // Merge own players + assigned-team players (deduplicate by id)
+    const ownPlayers: Player[] = playersRes.data ?? [];
+    const extraPlayers: Player[] = assignedPlayersRes.data ?? [];
+    const seen = new Set(ownPlayers.map((p: Player) => p.id));
+    if (isMountedRef.current) setPlayers([...ownPlayers, ...extraPlayers.filter((p: Player) => !seen.has(p.id))]);
+    // Merge own teams + assigned teams (deduplicate by id)
+    const ownTeams: Team[] = teamsRes.data ?? [];
+    const extraTeams: Team[] = (assignedTeamsRes.data ?? []).map((t: any) => ({ id: t.id, name: t.name }));
+    const seenTeams = new Set(ownTeams.map((t: Team) => t.id));
+    if (isMountedRef.current) setTeams([...ownTeams, ...extraTeams.filter((t: Team) => !seenTeams.has(t.id))]);
+    if (isMountedRef.current) setLoading(false);
   };
 
-  useEffect(() => { fetchPlayers(); }, [user]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchPlayers();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [user]);
 
   const openAdd = () => {
     setEditingId(null);
@@ -112,6 +132,7 @@ const CoachPlayers = () => {
       date_of_birth: form.date_of_birth || null,
       age: form.age || null,
       team: form.team.trim(),
+      team_id: form.team_id ?? null,
       height: form.height?.trim() || null,
       weight: form.weight?.trim() || null,
       volleyball_position: form.volleyball_position || null,
@@ -258,11 +279,18 @@ const CoachPlayers = () => {
                   <span>No teams yet. <a href="/coach/teams" className="underline font-medium">Create a team first</a>, then come back to assign players.</span>
                 </div>
               ) : (
-                <Select value={form.team || "none"} onValueChange={(v) => setForm((f) => ({ ...f, team: v === "none" ? "" : v }))}>
+                <Select value={form.team_id || "none"} onValueChange={(v) => {
+                    if (v === "none") {
+                      setForm((f) => ({ ...f, team: "", team_id: null }));
+                    } else {
+                      const t = teams.find((t) => t.id === v);
+                      setForm((f) => ({ ...f, team: t?.name ?? "", team_id: v }));
+                    }
+                  }}>
                   <SelectTrigger><SelectValue placeholder="Select a team" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— No team —</SelectItem>
-                    {teams.map((t) => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
+                    {teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               )}

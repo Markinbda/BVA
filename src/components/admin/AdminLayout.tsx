@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const navItems = [
-  { path: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/admin", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
   { path: "/admin/users", label: "System Users", icon: Users, permission: "manage_users" },
   { path: "/admin/seasons", label: "Season History", icon: Medal, permission: "manage_leagues" },
   { path: "/admin/news", label: "News", icon: Newspaper, permission: "manage_news" },
@@ -37,6 +37,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
 
   const visibleNavItems = navItems.filter((item) => {
     if (isAdmin) return true;
+    if ((item as { adminOnly?: boolean }).adminOnly) return false;
     if (!item.permission) return isSystemUser;
     return hasPermission(item.permission);
   });

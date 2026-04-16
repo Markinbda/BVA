@@ -122,9 +122,18 @@ function useBrowserStream() {
       // Wait for ICE gathering (max 6 s)
       await new Promise<void>(resolve => {
         if (peerConn.iceGatheringState === "complete") { resolve(); return; }
-        const done = () => { if (peerConn.iceGatheringState === "complete") resolve(); };
+        const done = () => { 
+          if (peerConn.iceGatheringState === "complete") {
+            peerConn.removeEventListener("icegatheringstatechange", done);
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+        const timeout = setTimeout(() => {
+          peerConn.removeEventListener("icegatheringstatechange", done);
+          resolve();
+        }, 6000);
         peerConn.addEventListener("icegatheringstatechange", done);
-        setTimeout(resolve, 6000);
       });
       const res = await fetch(whipUrl, {
         method: "POST",
@@ -169,6 +178,7 @@ function useBrowserStream() {
 const CoachLiveStream = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMountedRef = useRef(true);
 
   const [streams, setStreams]           = useState<LiveStream[]>([]);
   const [loading, setLoading]           = useState(true);
@@ -198,18 +208,24 @@ const CoachLiveStream = () => {
   const browser = useBrowserStream();
 
   const fetchStreams = async () => {
-    if (!user) return;
+    if (!user || !isMountedRef.current) return;
     setLoading(true);
     const { data } = await (supabase as any)
       .from("live_streams")
       .select("*")
       .eq("coach_id", user.id)
       .order("created_at", { ascending: false });
-    setStreams(data ?? []);
-    setLoading(false);
+    if (isMountedRef.current) setStreams(data ?? []);
+    if (isMountedRef.current) setLoading(false);
   };
 
-  useEffect(() => { fetchStreams(); }, [user]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchStreams();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [user]);
 
   const handleCreate = async () => {
     if (!newTitle.trim()) return;

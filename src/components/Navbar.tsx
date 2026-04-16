@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, ChevronDown, User, LogOut, ShieldCheck, Search, GraduationCap } from "lucide-react";
+import { Menu, X, ChevronDown, User, LogOut, ShieldCheck, Search, GraduationCap, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAdminEditMode } from "@/contexts/AdminEditModeContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -92,7 +92,7 @@ const Navbar = () => {
   const location = useLocation();
   const navRef = useRef<HTMLUListElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { user, isAdmin, canEditContent, signOut, hasPermission } = useAuth();
+  const { user, isAdmin, isPlayer, canEditContent, signOut, hasPermission } = useAuth();
   const { editMode, setEditMode } = useAdminEditMode();
 
   useEffect(() => {
@@ -226,6 +226,15 @@ const Navbar = () => {
                     <User className="h-4 w-4" />
                     My Profile
                   </Link>
+                  {isPlayer && (
+                    <Link
+                      to="/player"
+                      className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
+                    >
+                      <Video className="h-4 w-4" />
+                      Player Portal
+                    </Link>
+                  )}
                   <Link
                     to="/players"
                     className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"

@@ -13,22 +13,39 @@ import {
   Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
-const navItems = [
+const BASE_NAV = [
   { path: "/coach", label: "Dashboard", icon: LayoutDashboard },
   { path: "/coach/players", label: "Players", icon: Users },
-  { path: "/coach/teams", label: "Teams & Mailing Lists", icon: ClipboardList },
   { path: "/coach/videos", label: "Video Library", icon: Video },
   { path: "/coach/live", label: "Live Streaming", icon: Radio },
   { path: "/coach/email", label: "Send Email", icon: Mail },
   { path: "/coach/email-history", label: "Email History", icon: ClipboardList },
 ];
 
+const TEAMS_ITEM = { path: "/coach/teams", label: "Teams & Mailing Lists", icon: ClipboardList };
+
 const CoachLayout = ({ children }: { children: React.ReactNode }) => {
   const { signOut, user, isAdmin } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showTeams, setShowTeams] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    if (isAdmin) { setShowTeams(true); return; }
+    (supabase as any)
+      .from("coach_teams")
+      .select("id", { count: "exact", head: true })
+      .eq("coach_id", user.id)
+      .then(({ count }: { count: number | null }) => setShowTeams((count ?? 0) > 0));
+  }, [user, isAdmin]);
+
+  const navItems = showTeams
+    ? [BASE_NAV[0], BASE_NAV[1], TEAMS_ITEM, ...BASE_NAV.slice(2)]
+    : BASE_NAV;
 
   return (
     <div className="min-h-screen flex bg-muted/30">

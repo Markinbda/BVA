@@ -52,10 +52,37 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (videoErr || !video) return err("Video not found.");
+
+    // Service client bypasses RLS — used for player lookups and permission checks
+    const serviceClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
     if (video.coach_id !== user.id) {
       // Allow admins
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-      if (profile?.role !== "admin") return err("Forbidden.");
+      const isAdmin = profile?.role === "admin";
+      // Allow coaches who are assigned to a team owned by the video's coach
+      let isAssignedCoach = false;
+      if (!isAdmin) {
+        // Get all teams owned by the video's coach
+        const { data: ownerTeams } = await serviceClient
+          .from("coach_teams")
+          .select("id")
+          .eq("coach_id", video.coach_id);
+        const ownerTeamIds = (ownerTeams ?? []).map((t: any) => t.id);
+        if (ownerTeamIds.length) {
+          const { data: assignment } = await serviceClient
+            .from("team_coaches")
+            .select("id")
+            .eq("user_id", user.id)
+            .in("team_id", ownerTeamIds)
+            .limit(1);
+          isAssignedCoach = (assignment ?? []).length > 0;
+        }
+      }
+      if (!isAdmin && !isAssignedCoach) return err("Forbidden.");
     }
 
     // ── Collect player emails ─────────────────────────────────────────────────
@@ -63,7 +90,7 @@ Deno.serve(async (req: Request) => {
 
     if (team_ids.length) {
       // Look up team names so we can also match against the legacy text `team` field
-      const { data: teamRows } = await supabase
+      const { data: teamRows } = await serviceClient
         .from("coach_teams")
         .select("id, name")
         .in("id", team_ids);
@@ -71,10 +98,10 @@ Deno.serve(async (req: Request) => {
 
       // Query by team_id UUID (new records) and by team text field (legacy records)
       const [byId, byName] = await Promise.all([
-        supabase.from("coach_players").select("id, first_name, last_name, email")
+        serviceClient.from("coach_players").select("id, first_name, last_name, email")
           .in("team_id", team_ids).not("email", "is", null),
         teamNames.length
-          ? supabase.from("coach_players").select("id, first_name, last_name, email")
+          ? serviceClient.from("coach_players").select("id, first_name, last_name, email")
               .in("team", teamNames).not("email", "is", null)
           : Promise.resolve({ data: [] }),
       ]);
@@ -88,7 +115,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (player_ids.length) {
-      const { data: specificPlayers } = await supabase
+      const { data: specificPlayers } = await serviceClient
         .from("coach_players")
         .select("id, first_name, last_name, email")
         .in("id", player_ids)
@@ -100,53 +127,89 @@ Deno.serve(async (req: Request) => {
 
     if (!players.length) return err("No players with email addresses found.");
 
-    const watchUrl = (video as any).video_provider === "youtube"
-      ? `https://www.youtube.com/watch?v=${video.video_uid}`
-      : `https://watch.cloudflarestream.com/${video.video_uid}`;
     const recipients = players.map(p => p.email);
-
-    // ── Send via send-coach-email function ────────────────────────────────────
     const subject = `New Video: ${video.title}`;
-    const body = `
-<p>Hi,</p>
-<p>Your coach has shared a new video with you: <strong>${video.title}</strong></p>
-${video.description ? `<p>${video.description}</p>` : ""}
-<p><a href="${watchUrl}" style="background:#1a56db;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;">Watch Video</a></p>
-<p>Or copy this link: <a href="${watchUrl}">${watchUrl}</a></p>
-<br>
-<p style="color:#666;font-size:12px;">Bermuda Volleyball Association &mdash; Coach Portal</p>
-    `.trim();
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-coach-email`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${SERVICE_KEY}`,
-      },
-      body: JSON.stringify({ subject, body, recipients }),
-    });
+    const PUBLIC_SITE_URL = (Deno.env.get("PUBLIC_SITE_URL") ?? "https://bermudavolleyball.netlify.app").replace(/\/$/, "");
+    const directPlayerIds = new Set<string>(player_ids);
+    const sentRecipients: string[] = [];
+    const failedRecipients: string[] = [];
+    const historyBodies: string[] = [];
 
-    const emailJson = await emailRes.json().catch(() => ({}));
+    for (const player of players) {
+      const { data: tokenRow, error: tokenErr } = await serviceClient
+        .from("video_share_tokens")
+        .insert({
+          video_id: video.id,
+          coach_player_id: player.id,
+          player_name: player.name,
+          is_personal: directPlayerIds.has(player.id),
+        })
+        .select("token")
+        .single();
 
-    if (!emailRes.ok) {
-      console.error("Email send failed:", emailJson);
-      return err(`Email delivery failed: ${emailJson?.error ?? emailRes.status}`);
+      if (tokenErr || !tokenRow?.token) {
+        console.error("Token create failed:", tokenErr);
+        failedRecipients.push(player.email);
+        continue;
+      }
+
+      const tokenWatchUrl = `${PUBLIC_SITE_URL}/watch/${tokenRow.token}`;
+      const loginLibraryUrl = `${PUBLIC_SITE_URL}/my-notes`;
+      const body = `
+<p>Hi ${player.name || "Player"},</p>
+<p>Your coach has shared a new video with you: <strong>${video.title}</strong></p>
+${video.description ? `<p>${video.description}</p>` : ""}
+<p><a href="${tokenWatchUrl}" style="background:#1a56db;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;">Watch Video + Coach Annotations</a></p>
+<p>Or copy this link: <a href="${tokenWatchUrl}">${tokenWatchUrl}</a></p>
+<p>If you have a BVA account with this same email, you can also view your full video library at <a href="${loginLibraryUrl}">${loginLibraryUrl}</a>.</p>
+<br>
+<p style="color:#666;font-size:12px;">Bermuda Volleyball Association &mdash; Coach Portal</p>
+      `.trim();
+
+      const emailRes = await fetch(`${SUPABASE_URL}/functions/v1/send-coach-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+        },
+        body: JSON.stringify({ subject, body, recipients: [player.email] }),
+      });
+
+      const emailJson = await emailRes.json().catch(() => ({}));
+
+      if (!emailRes.ok) {
+        console.error("Email send failed:", emailJson);
+        failedRecipients.push(player.email);
+        continue;
+      }
+
+      historyBodies.push(body);
+      sentRecipients.push(player.email);
+    }
+
+    if (!sentRecipients.length) {
+      return err("Email delivery failed for all recipients.");
     }
 
     // ── Log to email history ──────────────────────────────────────────────────
     await supabase.from("coach_email_history").insert({
       coach_id:   user.id,
       subject,
-      body,
-      recipients,
+      body: historyBodies[0] ?? "Tokenized video notification",
+      recipients: sentRecipients,
       team_names: [],
       status:     "sent",
     });
 
-    return ok({ sent: recipients.length, recipients });
+    return ok({
+      sent: sentRecipients.length,
+      recipients: sentRecipients,
+      failed: failedRecipients,
+    });
 
   } catch (e: any) {
     console.error("notify-video error:", e);

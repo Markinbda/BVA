@@ -85,6 +85,7 @@ const CoachVideoReview = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMountedRef = useRef(true);
 
   // --- Video + data ---
   const [video, setVideo] = useState<CoachVideo | null>(null);
@@ -108,6 +109,9 @@ const CoachVideoReview = () => {
   // --- Voice recording ---
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMicId, setSelectedMicId] = useState<string>("default");
+  const [hasPromptedMicPermission, setHasPromptedMicPermission] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,13 +125,15 @@ const CoachVideoReview = () => {
   // ── Load data ────────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
-    if (!videoId || !user) return;
+    if (!videoId || !user || !isMountedRef.current) return;
     setLoadingData(true);
 
     const [videoRes, notesRes] = await Promise.all([
       (supabase as any).from("coach_videos").select("id,title,video_uid,video_provider,team_ids").eq("id", videoId).single(),
       (supabase as any).from("video_notes").select("*").eq("video_id", videoId).order("timestamp_seconds"),
     ]);
+
+    if (!isMountedRef.current) return;
 
     if (videoRes.error || !videoRes.data) {
       toast({ title: "Video not found", variant: "destructive" });
@@ -140,29 +146,44 @@ const CoachVideoReview = () => {
 
     // Load players from all teams this video belongs to
     if (vid.team_ids?.length) {
-      const { data: playersData } = await (supabase as any)
-        .from("coach_players")
-        .select("id,first_name,last_name,team_id")
-        .eq("coach_id", user.id)
-        .in("team_id", vid.team_ids)
-        .order("last_name");
-      setPlayers(playersData ?? []);
+      const [ownRes, assignedRes] = await Promise.all([
+        (supabase as any)
+          .from("coach_players")
+          .select("id,first_name,last_name,team_id")
+          .eq("coach_id", user.id)
+          .in("team_id", vid.team_ids)
+          .order("last_name"),
+        (supabase as any)
+          .rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
+      ]);
+      if (!isMountedRef.current) return;
+      const own: any[] = ownRes.data ?? [];
+      const extra: any[] = (assignedRes.data ?? []).filter((p: any) => vid.team_ids.includes(p.team_id));
+      const seen = new Set(own.map((p: any) => p.id));
+      setPlayers([...own, ...extra.filter((p: any) => !seen.has(p.id))]);
     } else {
-      // No team filter — load all coach's players
-      const { data: playersData } = await (supabase as any)
-        .from("coach_players")
-        .select("id,first_name,last_name,team_id")
-        .eq("coach_id", user.id)
-        .order("last_name");
-      setPlayers(playersData ?? []);
+      // No team filter — load all coach's players + assigned-team players
+      const [ownRes, assignedRes] = await Promise.all([
+        (supabase as any)
+          .from("coach_players")
+          .select("id,first_name,last_name,team_id")
+          .eq("coach_id", user.id)
+          .order("last_name"),
+        (supabase as any)
+          .rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
+      ]);
+      if (!isMountedRef.current) return;
+      const own: any[] = ownRes.data ?? [];
+      const seen = new Set(own.map((p: any) => p.id));
+      setPlayers([...own, ...(assignedRes.data ?? []).filter((p: any) => !seen.has(p.id))]);
     }
 
     const fetchedNotes: VideoNote[] = notesRes.data ?? [];
-    setNotes(fetchedNotes);
+    if (isMountedRef.current) setNotes(fetchedNotes);
 
     // Fetch signed URLs for any voice notes
     const voiceNotes = fetchedNotes.filter(n => n.note_type === "voice" && n.voice_url);
-    if (voiceNotes.length) {
+    if (voiceNotes.length && isMountedRef.current) {
       const urls: Record<string, string> = {};
       await Promise.all(
         voiceNotes.map(async (n) => {
@@ -172,13 +193,19 @@ const CoachVideoReview = () => {
           if (data?.signedUrl) urls[n.id] = data.signedUrl;
         })
       );
-      setSignedUrls(urls);
+      if (isMountedRef.current) setSignedUrls(urls);
     }
 
-    setLoadingData(false);
-  }, [videoId, user, navigate, toast]);
+    if (isMountedRef.current) setLoadingData(false);
+  }, [videoId, user, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchData();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [fetchData]);
 
   // ── YouTube IFrame API timestamp polling ─────────────────────────────────
 
@@ -282,9 +309,45 @@ const CoachVideoReview = () => {
 
   // ── Voice recording ───────────────────────────────────────────────────────
 
+  const refreshAudioInputs = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === "audioinput");
+    setAudioInputs(mics);
+    if (mics.length > 0) {
+      const hasSelected = mics.some(m => m.deviceId === selectedMicId);
+      if (!hasSelected) setSelectedMicId(mics[0].deviceId || "default");
+    }
+  }, [selectedMicId]);
+
+  useEffect(() => {
+    refreshAudioInputs();
+  }, [refreshAudioInputs]);
+
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!hasPromptedMicPermission) {
+        toast({
+          title: "Allow microphone access",
+          description: "Your browser will ask for microphone permission before recording starts.",
+        });
+        setHasPromptedMicPermission(true);
+      }
+
+      const constraints =
+        selectedMicId && selectedMicId !== "default"
+          ? { audio: { deviceId: { exact: selectedMicId } } }
+          : { audio: true };
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch {
+        // Fallback to default mic if selected device is no longer available.
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      await refreshAudioInputs();
       const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       audioChunksRef.current = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
@@ -294,7 +357,11 @@ const CoachVideoReview = () => {
       setRecordingSeconds(0);
       recordingTimerRef.current = setInterval(() => setRecordingSeconds(s => s + 1), 1000);
     } catch {
-      toast({ title: "Microphone access denied", description: "Please allow microphone access to record voice notes.", variant: "destructive" });
+      toast({
+        title: "Microphone access denied",
+        description: "Please allow microphone access in your browser settings to record voice notes.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -516,6 +583,27 @@ const CoachVideoReview = () => {
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                   <Mic className="h-3.5 w-3.5" /> Voice Note
                 </label>
+
+                {audioInputs.length > 1 && !recording && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Microphone
+                    </label>
+                    <Select value={selectedMicId} onValueChange={setSelectedMicId}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Select microphone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {audioInputs.map((mic, idx) => (
+                          <SelectItem key={mic.deviceId || `mic-${idx}`} value={mic.deviceId || "default"}>
+                            {mic.label || `Microphone ${idx + 1}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 {!recording ? (
                   <Button
                     variant="outline"

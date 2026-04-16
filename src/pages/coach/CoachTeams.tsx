@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
@@ -50,6 +50,7 @@ interface Player {
 const CoachTeams = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMountedRef = useRef(true);
   const [teams, setTeams] = useState<Team[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,34 +68,44 @@ const CoachTeams = () => {
   const [filterAgeGroup, setFilterAgeGroup] = useState<string>("all");
 
   const fetchData = async () => {
-    if (!user) return;
+    if (!user || !isMountedRef.current) return;
     setLoading(true);
     // Fetch teams owned by this coach, plus teams they're assigned to via team_coaches
-    const [ownedRes, assignedRes, playersRes] = await Promise.all([
+    const [ownedRes, assignedRpcRes, playersRes, assignedPlayersRes] = await Promise.all([
       (supabase as any).from("coach_teams").select("*").eq("coach_id", user.id).order("name"),
-      (supabase as any).from("team_coaches").select("team_id").eq("user_id", user.id),
+      (supabase as any).rpc("get_assigned_teams_for_user", { p_user_id: user.id }),
       (supabase as any).from("coach_players").select("id, first_name, last_name, team, email").eq("coach_id", user.id),
+      (supabase as any).rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
     ]);
-    const ownedTeams = ownedRes.data ?? [];
-    const assignedTeamIds: string[] = (assignedRes.data ?? []).map((r: any) => r.team_id);
-    // Fetch assigned teams detail (exclude already-owned)
-    const ownedIds = ownedTeams.map((t: Team) => t.id);
-    const missingIds = assignedTeamIds.filter((id) => !ownedIds.includes(id));
-    let assignedTeams: Team[] = [];
-    if (missingIds.length > 0) {
-      const { data } = await (supabase as any)
-        .from("coach_teams")
-        .select("*")
-        .in("id", missingIds)
-        .order("name");
-      assignedTeams = data ?? [];
+    if (!isMountedRef.current) return;
+    if (assignedRpcRes.error) {
+      toast({ title: "Error loading team assignments", description: assignedRpcRes.error.message, variant: "destructive" });
     }
-    setTeams([...ownedTeams, ...assignedTeams]);
-    setPlayers(playersRes.data ?? []);
-    setLoading(false);
+    const ownedTeams: Team[] = ownedRes.data ?? [];
+    const ownedIds = ownedTeams.map((t: Team) => t.id);
+    // RPC returns all assigned teams; exclude ones already in owned list
+    const assignedTeams: Team[] = (assignedRpcRes.data ?? []).filter((t: Team) => !ownedIds.includes(t.id));
+    if (isMountedRef.current) setTeams([...ownedTeams, ...assignedTeams]);
+    // Merge own players + players from assigned teams (deduplicated by id)
+    const ownPlayers: Player[] = (playersRes.data ?? []).map((p: any) => ({
+      id: p.id, first_name: p.first_name, last_name: p.last_name, team: p.team, email: p.email,
+    }));
+    const assignedPlayers: Player[] = (assignedPlayersRes.data ?? []).map((p: any) => ({
+      id: p.id, first_name: p.first_name, last_name: p.last_name, team: p.team, email: p.email,
+    }));
+    const seen = new Set(ownPlayers.map((p) => p.id));
+    const merged = [...ownPlayers, ...assignedPlayers.filter((p) => !seen.has(p.id))];
+    if (isMountedRef.current) setPlayers(merged);
+    if (isMountedRef.current) setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [user]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchData();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [user]);
 
   // Auto-derive teams from player.team field (free-text groups)
   const playerGroups = players.reduce<Record<string, Player[]>>((acc, p) => {
