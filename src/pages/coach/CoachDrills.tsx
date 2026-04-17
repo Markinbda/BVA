@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -100,6 +101,7 @@ const CoachDrills = () => {
   const [drillCategoryMap, setDrillCategoryMap] = useState<Record<string, string[]>>({});
   const [drillSkillMap, setDrillSkillMap] = useState<Record<string, string[]>>({});
   const [drillCourtMap, setDrillCourtMap] = useState<Record<string, string[]>>({});
+  const [favoriteDrillIds, setFavoriteDrillIds] = useState<Set<string>>(new Set());
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -118,7 +120,7 @@ const CoachDrills = () => {
     if (!user) return;
     setLoading(true);
 
-    const [drillsRes, categoriesRes, skillsRes, courtsRes, d2cRes, d2sRes, d2ctRes] = await Promise.all([
+    const [drillsRes, categoriesRes, skillsRes, courtsRes, d2cRes, d2sRes, d2ctRes, favoritesRes] = await Promise.all([
       (supabase as any).from("coach_drills").select("*").order("created_at", { ascending: false }),
       (supabase as any).from("coach_drill_categories").select("id, name").order("sort_order").order("name"),
       (supabase as any).from("coach_drill_skills").select("id, name").order("sort_order").order("name"),
@@ -126,9 +128,10 @@ const CoachDrills = () => {
       (supabase as any).from("coach_drill_to_categories").select("drill_id, category_id"),
       (supabase as any).from("coach_drill_to_skills").select("drill_id, skill_id"),
       (supabase as any).from("coach_drill_to_courts").select("drill_id, court_id"),
+      (supabase as any).from("coach_favorite_drills").select("drill_id").eq("coach_id", user.id),
     ]);
 
-    if (drillsRes.error || categoriesRes.error || skillsRes.error || courtsRes.error || d2cRes.error || d2sRes.error || d2ctRes.error) {
+    if (drillsRes.error || categoriesRes.error || skillsRes.error || courtsRes.error || d2cRes.error || d2sRes.error || d2ctRes.error || favoritesRes.error) {
       toast({
         title: "Failed to load drills",
         description:
@@ -139,6 +142,7 @@ const CoachDrills = () => {
           d2cRes.error?.message ||
           d2sRes.error?.message ||
           d2ctRes.error?.message ||
+          favoritesRes.error?.message ||
           "Unknown error",
         variant: "destructive",
       });
@@ -169,6 +173,7 @@ const CoachDrills = () => {
     setDrillCategoryMap(categoryMap);
     setDrillSkillMap(skillMap);
     setDrillCourtMap(courtMap);
+    setFavoriteDrillIds(new Set((favoritesRes.data ?? []).map((row: any) => row.drill_id as string)));
     setLoading(false);
   };
 
@@ -430,6 +435,38 @@ const CoachDrills = () => {
     }
   };
 
+  const toggleFavorite = async (drillId: string, isFavorite: boolean) => {
+    if (!user) return;
+
+    if (isFavorite) {
+      const { error } = await (supabase as any)
+        .from("coach_favorite_drills")
+        .insert({ coach_id: user.id, drill_id: drillId });
+      if (error) {
+        toast({ title: "Failed to update favorite", description: error.message, variant: "destructive" });
+        return;
+      }
+      setFavoriteDrillIds((prev) => new Set([...prev, drillId]));
+      return;
+    }
+
+    const { error } = await (supabase as any)
+      .from("coach_favorite_drills")
+      .delete()
+      .eq("coach_id", user.id)
+      .eq("drill_id", drillId);
+    if (error) {
+      toast({ title: "Failed to update favorite", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setFavoriteDrillIds((prev) => {
+      const next = new Set(prev);
+      next.delete(drillId);
+      return next;
+    });
+  };
+
   return (
     <CoachLayout>
       <div className="space-y-6">
@@ -514,6 +551,7 @@ const CoachDrills = () => {
                       <th className="py-3 pr-4 font-medium">Categories</th>
                       <th className="py-3 pr-4 font-medium">Skills</th>
                       <th className="py-3 pr-4 font-medium">Courts</th>
+                      <th className="py-3 pr-4 font-medium">Favorite</th>
                       <th className="py-3 pr-4 font-medium">Shared</th>
                       <th className="py-3 pr-0 font-medium text-right">Action</th>
                     </tr>
@@ -527,7 +565,11 @@ const CoachDrills = () => {
 
                       return (
                         <tr key={drill.id} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="py-3 pr-4 font-medium text-foreground">{drill.name}</td>
+                          <td className="py-3 pr-4 font-medium text-foreground">
+                            <button type="button" onClick={() => openView(drill)} className="hover:underline text-left">
+                              {drill.name}
+                            </button>
+                          </td>
                           <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
                             {drill.duration_minutes != null ? (
                               <span className="inline-flex items-center gap-1.5">
@@ -562,6 +604,13 @@ const CoachDrills = () => {
                                 courtBadges.slice(0, 2).map((name) => <Badge key={`${drill.id}-${name}`} className="bg-slate-600 hover:bg-slate-600">{name}</Badge>)
                               )}
                             </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Switch
+                              checked={favoriteDrillIds.has(drill.id)}
+                              onCheckedChange={(checked) => toggleFavorite(drill.id, checked)}
+                              aria-label={`Favorite drill ${drill.name}`}
+                            />
                           </td>
                           <td className="py-3 pr-4">
                             {drill.is_shared ? (

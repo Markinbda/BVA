@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ interface Team {
 
 interface Plan {
   id: string;
+  coach_id: string;
   name: string;
   practice_date: string | null;
   team_id: string | null;
@@ -211,6 +213,24 @@ const CoachPracticePlans = () => {
     }
   };
 
+  const handleToggleShared = async (plan: Plan, nextShared: boolean) => {
+    if (!user) return;
+    if (plan.coach_id !== user.id) return;
+
+    const { error } = await (supabase as any)
+      .from("coach_practice_plans")
+      .update({ is_shared: nextShared })
+      .eq("id", plan.id);
+
+    if (error) {
+      toast({ title: "Failed to update sharing", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setPlans((prev) => prev.map((p) => (p.id === plan.id ? { ...p, is_shared: nextShared } : p)));
+    toast({ title: nextShared ? "Plan shared with all coaches" : "Plan unshared" });
+  };
+
   const formatPracticeDate = (value: string | null) => {
     if (!value) return "-";
     const parsed = new Date(`${value}T00:00:00`);
@@ -266,7 +286,15 @@ const CoachPracticePlans = () => {
                   <tbody>
                     {filtered.map((plan) => (
                       <tr key={plan.id} className="border-b last:border-0 hover:bg-muted/40">
-                        <td className="py-3 pr-4 font-medium text-foreground">{plan.name}</td>
+                        <td className="py-3 pr-4 font-medium text-foreground">
+                          <Link
+                            to={plan.coach_id === user?.id ? `/coach/practice-plans/${plan.id}` : `/coach/practice-plans/${plan.id}/view`}
+                            className="hover:underline"
+                            title={plan.coach_id === user?.id ? "Open plan editor" : "View shared plan"}
+                          >
+                            {plan.name}
+                          </Link>
+                        </td>
                         <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
                           <span className="inline-flex items-center gap-1.5">
                             <Calendar className="h-3.5 w-3.5" />
@@ -275,10 +303,14 @@ const CoachPracticePlans = () => {
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">{plan.team_id ? teamById[plan.team_id] ?? "Unknown team" : "None"}</td>
                         <td className="py-3 pr-4">
-                          {plan.is_shared ? (
-                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted">Yes</span>
+                          {plan.coach_id === user?.id ? (
+                            <Switch
+                              checked={plan.is_shared}
+                              onCheckedChange={(checked) => handleToggleShared(plan, checked)}
+                              aria-label={`Share plan ${plan.name}`}
+                            />
                           ) : (
-                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted text-muted-foreground">No</span>
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted">{plan.is_shared ? "Shared" : "Private"}</span>
                           )}
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">{plan.practice_focus || "-"}</td>
@@ -300,19 +332,27 @@ const CoachPracticePlans = () => {
                               </Button>
                             </Link>
                             <Link to={`/coach/practice-plans/${plan.id}`}>
-                              <Button variant="ghost" size="icon" title="Edit" className="h-8 w-8">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title={plan.coach_id === user?.id ? "Edit" : "View"}
+                                className="h-8 w-8"
+                                disabled={plan.coach_id !== user?.id}
+                              >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             </Link>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Delete"
-                              onClick={() => handleDelete(plan)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {plan.coach_id === user?.id && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Delete"
+                                onClick={() => handleDelete(plan)}
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>

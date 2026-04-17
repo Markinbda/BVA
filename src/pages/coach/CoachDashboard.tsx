@@ -14,23 +14,47 @@ interface Stats {
   plans: number;
 }
 
+interface FavoriteDrill {
+  id: string;
+  name: string;
+  duration_minutes: number | null;
+}
+
 const CoachDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState<Stats>({ players: 0, teams: 0, emails: 0, drills: 0, plans: 0 });
   const [displayName, setDisplayName] = useState("");
+  const [favoriteDrills, setFavoriteDrills] = useState<FavoriteDrill[]>([]);
 
   useEffect(() => {
     if (!user) return;
 
     const load = async () => {
-      const [playersRes, teamsRes, emailsRes, drillsRes, plansRes, profileRes] = await Promise.all([
+      const [playersRes, teamsRes, emailsRes, drillsRes, plansRes, profileRes, favoritesRes] = await Promise.all([
         (supabase as any).from("coach_players").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_teams").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_email_history").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_drills").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_practice_plans").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("profiles").select("display_name").eq("user_id", user.id).single(),
+        (supabase as any).from("coach_favorite_drills").select("drill_id").eq("coach_id", user.id).limit(8),
       ]);
+
+      let favoriteRows: FavoriteDrill[] = [];
+      if (!favoritesRes.error) {
+        const favoriteIds = (favoritesRes.data ?? []).map((row: any) => row.drill_id).filter(Boolean);
+        if (favoriteIds.length > 0) {
+          const { data: drillsData, error: drillsError } = await (supabase as any)
+            .from("coach_drills")
+            .select("id, name, duration_minutes")
+            .in("id", favoriteIds)
+            .order("name");
+          if (!drillsError) {
+            favoriteRows = drillsData ?? [];
+          }
+        }
+      }
+
       setStats({
         players: playersRes.count ?? 0,
         teams: teamsRes.count ?? 0,
@@ -39,6 +63,7 @@ const CoachDashboard = () => {
         plans: plansRes.count ?? 0,
       });
       setDisplayName(profileRes.data?.display_name ?? user.email ?? "Coach");
+      setFavoriteDrills(favoriteRows);
     };
 
     load();
@@ -105,6 +130,35 @@ const CoachDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Dumbbell className="h-4 w-4" /> Favorite Drills
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {favoriteDrills.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No favorites yet. Turn on favorites in <Link to="/coach/drills" className="text-primary hover:underline">Drill Library</Link>.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                {favoriteDrills.map((drill) => (
+                  <Link
+                    key={drill.id}
+                    to="/coach/drills"
+                    className="rounded-md border px-3 py-2 hover:bg-muted/40 transition-colors"
+                    title="Open Drill Library"
+                  >
+                    <div className="text-sm font-medium text-foreground">{drill.name}</div>
+                    <div className="text-xs text-muted-foreground">{drill.duration_minutes ?? "-"} min</div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </CoachLayout>
   );
