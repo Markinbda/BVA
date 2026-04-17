@@ -188,6 +188,44 @@ const AdminVideos = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const logVideoUploadAnalytics = async (params: {
+    status: "completed" | "failed";
+    uploadAttemptId: string;
+    fileName: string;
+    fileSize: number;
+    title: string;
+    provider: "youtube" | "cloudflare";
+    visibility: "team" | "all_coaches";
+    teamCount: number;
+    categoryCount: number;
+    videoId?: string | null;
+    errorMessage?: string;
+  }) => {
+    if (!user) return;
+    try {
+      await (supabase as any).from("admin_audit_logs").insert({
+        user_id: user.id,
+        action: params.status === "completed" ? "video_upload_completed" : "video_upload_failed",
+        target_path: "/admin/videos",
+        details: JSON.stringify({
+          uploadAttemptId: params.uploadAttemptId,
+          status: params.status,
+          fileName: params.fileName,
+          fileSize: params.fileSize,
+          title: params.title,
+          provider: params.provider,
+          visibility: params.visibility,
+          teamCount: params.teamCount,
+          categoryCount: params.categoryCount,
+          videoId: params.videoId ?? null,
+          errorMessage: params.errorMessage ?? null,
+        }),
+      });
+    } catch (auditError) {
+      console.warn("Failed to write video upload analytics log:", auditError);
+    }
+  };
+
   const uploadToYouTube = async (
     file: File,
     uploadUrl: string,
@@ -229,6 +267,11 @@ const AdminVideos = () => {
 
   const handleUpload = async () => {
     if (!user || !videoFile || !title.trim()) return;
+    const uploadAttemptId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `upload-${Date.now()}`;
+    const resolvedVisibility = selectedTeams.size > 0 ? "team" : "all_coaches";
     setUploading(true); setUploadProgress(2); setUploadStatus("Preparing upload...");
     try {
       const { data, error: fnError } = await supabase.functions.invoke("youtube-video-upload", {
@@ -250,14 +293,39 @@ const AdminVideos = () => {
         video_provider: "youtube",
         team_ids:       Array.from(selectedTeams),
         categories:     Array.from(selectedCategories),
-        visibility:     selectedTeams.size > 0 ? "team" : "all_coaches",
+        visibility:     resolvedVisibility,
       });
       if (saveError) throw new Error(saveError.message);
+
+      await logVideoUploadAnalytics({
+        status: "completed",
+        uploadAttemptId,
+        fileName: videoFile.name,
+        fileSize: videoFile.size,
+        title: title.trim(),
+        provider: "youtube",
+        visibility: resolvedVisibility,
+        teamCount: selectedTeams.size,
+        categoryCount: selectedCategories.size,
+        videoId,
+      });
 
       setUploadProgress(100); setUploadStatus("Done!");
       toast({ title: "Video uploaded!", description: "Processing on YouTube — available within a few minutes." });
       setUploadOpen(false); resetForm(); fetchData();
     } catch (err: any) {
+      await logVideoUploadAnalytics({
+        status: "failed",
+        uploadAttemptId,
+        fileName: videoFile.name,
+        fileSize: videoFile.size,
+        title: title.trim(),
+        provider: "youtube",
+        visibility: resolvedVisibility,
+        teamCount: selectedTeams.size,
+        categoryCount: selectedCategories.size,
+        errorMessage: err.message,
+      });
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
       setUploadStatus("Upload failed");
     } finally {

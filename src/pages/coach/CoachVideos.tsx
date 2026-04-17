@@ -231,9 +231,52 @@ const CoachVideos = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const logVideoUploadAnalytics = async (params: {
+    status: "completed" | "failed";
+    uploadAttemptId: string;
+    fileName: string;
+    fileSize: number;
+    title: string;
+    provider: "youtube" | "cloudflare";
+    visibility: "private" | "team" | "all_coaches";
+    teamCount: number;
+    categoryCount: number;
+    videoId?: string | null;
+    errorMessage?: string;
+  }) => {
+    if (!user) return;
+    try {
+      await (supabase as any).from("admin_audit_logs").insert({
+        user_id: user.id,
+        action: params.status === "completed" ? "video_upload_completed" : "video_upload_failed",
+        target_path: "/coach/videos",
+        details: JSON.stringify({
+          uploadAttemptId: params.uploadAttemptId,
+          status: params.status,
+          fileName: params.fileName,
+          fileSize: params.fileSize,
+          title: params.title,
+          provider: params.provider,
+          visibility: params.visibility,
+          teamCount: params.teamCount,
+          categoryCount: params.categoryCount,
+          videoId: params.videoId ?? null,
+          errorMessage: params.errorMessage ?? null,
+        }),
+      });
+    } catch (auditError) {
+      console.warn("Failed to write video upload analytics log:", auditError);
+    }
+  };
+
   const handleUpload = async () => {
     const file = videoFileRef.current;
     if (!user || !file || !title.trim()) return;
+    const uploadAttemptId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `upload-${Date.now()}`;
+    const resolvedVisibility = shareWithAll ? "all_coaches" : (selectedTeams.size > 0 ? "team" : "private");
     // Nullify the state reference now — the ref keeps it alive until upload
     // completes, but React won't see the File in state during re-renders
     uploadTimedOutRef.current = false;
@@ -272,9 +315,22 @@ const CoachVideos = () => {
         video_provider: "youtube",
         team_ids:       Array.from(selectedTeams),
         categories:     Array.from(selectedCategories),
-        visibility:     shareWithAll ? "all_coaches" : (selectedTeams.size > 0 ? "team" : "private"),
+        visibility:     resolvedVisibility,
       });
       if (saveError) throw new Error(saveError.message);
+
+      await logVideoUploadAnalytics({
+        status: "completed",
+        uploadAttemptId,
+        fileName: file.name,
+        fileSize: file.size,
+        title: title.trim(),
+        provider: "youtube",
+        visibility: resolvedVisibility,
+        teamCount: selectedTeams.size,
+        categoryCount: selectedCategories.size,
+        videoId,
+      });
 
       setUploadProgress(100); setUploadStatus("Done!");
       toast({ title: "Video uploaded!", description: "Processing on YouTube — available within a few minutes." });
@@ -284,6 +340,18 @@ const CoachVideos = () => {
       const msg = uploadTimedOutRef.current
         ? "Upload timed out. Please try again with a smaller file or faster connection."
         : err.message;
+      await logVideoUploadAnalytics({
+        status: "failed",
+        uploadAttemptId,
+        fileName: file.name,
+        fileSize: file.size,
+        title: title.trim(),
+        provider: "youtube",
+        visibility: resolvedVisibility,
+        teamCount: selectedTeams.size,
+        categoryCount: selectedCategories.size,
+        errorMessage: msg,
+      });
       toast({ title: "Upload failed", description: msg, variant: "destructive" });
       setUploadStatus("Upload failed");
     } finally {

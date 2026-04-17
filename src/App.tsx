@@ -46,6 +46,7 @@ import AdminGalleryCategories from "./pages/admin/AdminGalleryCategories";
 import AdminEventLocations from "./pages/admin/AdminEventLocations";
 import AdminVideos from "./pages/admin/AdminVideos";
 import AdminTeams from "./pages/admin/AdminTeams";
+import AdminVideoUploadAnalytics from "./pages/admin/AdminVideoUploadAnalytics";
 import EditSidebar from "@/components/admin/EditSidebar";
 import { AdminEditModeProvider } from "@/contexts/AdminEditModeContext";
 import MemberRegistration from "./pages/MemberRegistration";
@@ -146,6 +147,7 @@ const App = () => (
             <Route path="/admin/gallery-categories" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminGalleryCategories /></AdminRoute>} />
             <Route path="/admin/event-locations" element={<AdminRoute requiredPermissions={["manage_events"]}><AdminEventLocations /></AdminRoute>} />
             <Route path="/admin/videos" element={<AdminRoute requiredPermissions={["manage_gallery"]}><AdminVideos /></AdminRoute>} />
+            <Route path="/admin/video-upload-analytics" element={<AdminRoute requiredPermissions={["manage_gallery", "manage_coaches"]}><AdminVideoUploadAnalytics /></AdminRoute>} />
             <Route path="/admin/teams" element={<AdminRoute requiredPermissions={["manage_coaches"]}><AdminTeams /></AdminRoute>} />
 
             {/* About sub-pages */}

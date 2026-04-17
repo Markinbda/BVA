@@ -113,22 +113,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     isMountedRef.current = true;
-    let initComplete = false;
+    let lastSessionId: string | null = null;
+
+    const runPermissionChecks = async (userId: string, email: string | undefined) => {
+      await Promise.all([
+        checkAdminRole(userId, email),
+        checkLeagueDirectorRole(userId),
+        checkUserPermissions(userId, email),
+        checkPlayerRole(email),
+      ]);
+    };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!isMountedRef.current) return;
+        
+        const currentSessionId = session?.user?.id ?? null;
+        // Only run checks if the session ID changed (prevent duplicate concurrent runs)
+        const sessionChanged = currentSessionId !== lastSessionId;
+        lastSessionId = currentSessionId;
+
         setSession(session);
         setUser(session?.user ?? null);
         applyOwnerFallback(session?.user?.email);
-        if (session?.user && !initComplete) {
-          await Promise.all([
-            checkAdminRole(session.user.id, session.user.email),
-            checkLeagueDirectorRole(session.user.id),
-            checkUserPermissions(session.user.id, session.user.email),
-            checkPlayerRole(session.user.email),
-          ]);
+        
+        if (session?.user && sessionChanged) {
+          await runPermissionChecks(session.user.id, session.user.email);
         }
+        
         if (isMountedRef.current) setLoading(false);
       }
     );
@@ -140,15 +152,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         applyOwnerFallback(session?.user?.email);
-        if (session?.user) {
-          await Promise.all([
-            checkAdminRole(session.user.id, session.user.email),
-            checkLeagueDirectorRole(session.user.id),
-            checkUserPermissions(session.user.id, session.user.email),
-            checkPlayerRole(session.user.email),
-          ]);
-        }
-        initComplete = true;
+        // Don't re-run checks here; let the listener handle initial state
       } finally {
         if (isMountedRef.current) setLoading(false);
       }
