@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
@@ -25,7 +25,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Pencil, Trash2, Timer, ExternalLink, Eye, Copy } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Timer, ExternalLink, Eye, Copy, Mic, Square, Video } from "lucide-react";
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
 
 interface Lookup {
   id: string;
@@ -46,6 +57,7 @@ interface Drill {
   coach_role: string | null;
   age_group: string | null;
   coach_note: string | null;
+  drill_video_path: string | null;
   is_shared: boolean;
   created_at: string;
 }
@@ -62,6 +74,7 @@ interface DrillForm {
   coach_role: string;
   age_group: string;
   coach_note: string;
+  drill_video_path: string;
   is_shared: boolean;
   categoryIds: string[];
   skillIds: string[];
@@ -80,6 +93,7 @@ const emptyForm: DrillForm = {
   coach_role: "",
   age_group: "",
   coach_note: "",
+  drill_video_path: "",
   is_shared: false,
   categoryIds: [],
   skillIds: [],
@@ -113,6 +127,17 @@ const CoachDrills = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewingDrill, setViewingDrill] = useState<Drill | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [isListeningField, setIsListeningField] = useState<"description" | "coach_note" | null>(null);
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
+  const [viewVideoUrl, setViewVideoUrl] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const videoRecorderRef = useRef<MediaRecorder | null>(null);
+  const videoChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<number | null>(null);
+  const recordingStopTimerRef = useRef<number | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
   const [form, setForm] = useState<DrillForm>(emptyForm);
   const canImportLegacy = hasPermission("manage_import");
 
@@ -181,6 +206,43 @@ const CoachDrills = () => {
     loadData();
   }, [user]);
 
+  useEffect(() => {
+    const loadEditVideo = async () => {
+      if (!dialogOpen || !form.drill_video_path || isRecordingVideo) return;
+      const { data, error } = await supabase.storage
+        .from("coach-drill-videos")
+        .createSignedUrl(form.drill_video_path, 3600);
+      if (!error && data?.signedUrl) {
+        setRecordedVideoUrl(data.signedUrl);
+      }
+    };
+
+    loadEditVideo();
+  }, [dialogOpen, form.drill_video_path, isRecordingVideo]);
+
+  useEffect(() => {
+    const loadViewVideo = async () => {
+      if (!viewDialogOpen || !viewingDrill?.drill_video_path) return;
+      const { data, error } = await supabase.storage
+        .from("coach-drill-videos")
+        .createSignedUrl(viewingDrill.drill_video_path, 3600);
+      if (!error && data?.signedUrl) {
+        setViewVideoUrl(data.signedUrl);
+      }
+    };
+
+    loadViewVideo();
+  }, [viewDialogOpen, viewingDrill?.drill_video_path]);
+
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
+      if (recordingStopTimerRef.current) window.clearTimeout(recordingStopTimerRef.current);
+      recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
   const categoryNameById = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name])), [categories]);
   const skillNameById = useMemo(() => Object.fromEntries(skills.map((s) => [s.id, s.name])), [skills]);
   const courtNameById = useMemo(() => Object.fromEntries(courts.map((c) => [c.id, c.name])), [courts]);
@@ -205,6 +267,7 @@ const CoachDrills = () => {
 
   const openCreate = () => {
     setEditingId(null);
+    setRecordedVideoUrl(null);
     setForm({ ...emptyForm });
     setDialogOpen(true);
   };
@@ -223,16 +286,19 @@ const CoachDrills = () => {
       coach_role: drill.coach_role ?? "",
       age_group: drill.age_group ?? "",
       coach_note: drill.coach_note ?? "",
+      drill_video_path: drill.drill_video_path ?? "",
       is_shared: drill.is_shared,
       categoryIds: drillCategoryMap[drill.id] ?? [],
       skillIds: drillSkillMap[drill.id] ?? [],
       courtIds: drillCourtMap[drill.id] ?? [],
     });
+    setRecordedVideoUrl(null);
     setDialogOpen(true);
   };
 
   const openView = (drill: Drill) => {
     setViewingDrill(drill);
+    setViewVideoUrl(null);
     setViewDialogOpen(true);
   };
 
@@ -308,6 +374,7 @@ const CoachDrills = () => {
       coach_role: form.coach_role.trim() || null,
       age_group: form.age_group.trim() || null,
       coach_note: form.coach_note.trim() || null,
+      drill_video_path: form.drill_video_path.trim() || null,
       is_shared: form.is_shared,
     };
 
@@ -370,6 +437,7 @@ const CoachDrills = () => {
         coach_role: drill.coach_role,
         age_group: drill.age_group,
         coach_note: drill.coach_note,
+        drill_video_path: drill.drill_video_path,
         is_shared: false,
       };
 
@@ -465,6 +533,134 @@ const CoachDrills = () => {
       next.delete(drillId);
       return next;
     });
+  };
+
+  const getSpeechRecognition = () => {
+    const speechApi = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!speechApi) return null;
+    return new speechApi() as SpeechRecognitionLike;
+  };
+
+  const toggleDictation = (field: "description" | "coach_note") => {
+    if (isListeningField === field) {
+      recognitionRef.current?.stop();
+      setIsListeningField(null);
+      return;
+    }
+
+    recognitionRef.current?.stop();
+    const recognition = getSpeechRecognition();
+    if (!recognition) {
+      toast({ title: "Voice-to-text unavailable", description: "This browser does not support speech recognition.", variant: "destructive" });
+      return;
+    }
+
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (!transcript.trim()) return;
+
+      setForm((prev) => {
+        const current = prev[field] ?? "";
+        const spacer = current.trim().length > 0 ? " " : "";
+        return { ...prev, [field]: `${current}${spacer}${transcript.trim()}` };
+      });
+    };
+    recognition.onerror = () => {
+      setIsListeningField(null);
+      toast({ title: "Voice-to-text stopped", variant: "destructive" });
+    };
+    recognition.onend = () => {
+      setIsListeningField(null);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListeningField(field);
+  };
+
+  const stopVideoRecording = async () => {
+    const recorder = videoRecorderRef.current;
+    if (!recorder) return;
+
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+
+    if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
+    if (recordingStopTimerRef.current) window.clearTimeout(recordingStopTimerRef.current);
+    recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+    recordingStreamRef.current = null;
+    setIsRecordingVideo(false);
+
+    const blob = new Blob(videoChunksRef.current, { type: "video/webm" });
+    if (blob.size < 100) {
+      toast({ title: "Recording too short", variant: "destructive" });
+      return;
+    }
+
+    if (!user) return;
+
+    const path = `${user.id}/drills/${crypto.randomUUID()}.webm`;
+    const { error: uploadError } = await supabase.storage
+      .from("coach-drill-videos")
+      .upload(path, blob, { contentType: "video/webm" });
+
+    if (uploadError) {
+      toast({ title: "Video upload failed", description: uploadError.message, variant: "destructive" });
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(blob);
+    setRecordedVideoUrl((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return previewUrl;
+    });
+    setForm((prev) => ({ ...prev, drill_video_path: path }));
+    toast({ title: "Drill video attached" });
+  };
+
+  const startVideoRecording = async () => {
+    if (!user || isRecordingVideo) return;
+
+    alert("2 minutes maximum recording length. Camera and microphone access will be requested.");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      recordingStreamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
+      videoChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) videoChunksRef.current.push(event.data);
+      };
+
+      recorder.start(250);
+      videoRecorderRef.current = recorder;
+      setRecordingSeconds(0);
+      setIsRecordingVideo(true);
+
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+
+      recordingStopTimerRef.current = window.setTimeout(() => {
+        stopVideoRecording();
+        toast({ title: "Recording stopped", description: "2-minute maximum reached." });
+      }, 120000);
+    } catch (error: any) {
+      toast({
+        title: "Camera access denied",
+        description: error?.message ?? "Please allow camera and microphone access in your browser.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -693,6 +889,16 @@ const CoachDrills = () => {
                 <span className="text-muted-foreground">Coach Note:</span>
                 <p className="mt-1 whitespace-pre-wrap">{viewingDrill.coach_note || "-"}</p>
               </div>
+              {(viewVideoUrl || viewingDrill.drill_video_path) && (
+                <div>
+                  <span className="text-muted-foreground">Drill Video:</span>
+                  {viewVideoUrl ? (
+                    <video src={viewVideoUrl} controls className="mt-2 w-full rounded-md border max-h-72" />
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">Loading video...</p>
+                  )}
+                </div>
+              )}
               {viewingDrill.link && (
                 <a href={viewingDrill.link} target="_blank" rel="noreferrer" className="text-primary inline-flex items-center gap-1 hover:underline">
                   Open reference <ExternalLink className="h-3.5 w-3.5" />
@@ -733,6 +939,18 @@ const CoachDrills = () => {
 
           <div className="space-y-2">
             <Label htmlFor="drill-description">Description</Label>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant={isListeningField === "description" ? "destructive" : "outline"}
+                size="sm"
+                className="gap-1"
+                onClick={() => toggleDictation("description")}
+              >
+                {isListeningField === "description" ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                {isListeningField === "description" ? "Stop Mic" : "Mic"}
+              </Button>
+            </div>
             <Textarea id="drill-description" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} rows={4} />
           </div>
 
@@ -751,8 +969,42 @@ const CoachDrills = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="drill-coach-note">Coach Note</Label>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant={isListeningField === "coach_note" ? "destructive" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => toggleDictation("coach_note")}
+                >
+                  {isListeningField === "coach_note" ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                  {isListeningField === "coach_note" ? "Stop Mic" : "Mic"}
+                </Button>
+              </div>
               <Textarea id="drill-coach-note" value={form.coach_note} onChange={(e) => setForm((p) => ({ ...p, coach_note: e.target.value }))} rows={3} />
             </div>
+          </div>
+
+          <div className="space-y-2 border rounded-md p-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label>Drill Video (2 minutes max)</Label>
+              {!isRecordingVideo ? (
+                <Button type="button" variant="outline" size="sm" className="gap-1" onClick={startVideoRecording}>
+                  <Video className="h-3.5 w-3.5" /> Record
+                </Button>
+              ) : (
+                <Button type="button" variant="destructive" size="sm" className="gap-1" onClick={stopVideoRecording}>
+                  <Square className="h-3.5 w-3.5" /> Stop ({recordingSeconds}s)
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">A popup reminder appears before recording starts. Maximum recording length is 2 minutes.</p>
+            {form.drill_video_path && (
+              <p className="text-xs text-muted-foreground break-all">Saved video path: {form.drill_video_path}</p>
+            )}
+            {recordedVideoUrl && (
+              <video src={recordedVideoUrl} controls className="w-full max-h-56 rounded-md border" />
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
