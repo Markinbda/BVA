@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Eye, Trash2, Calendar, Search } from "lucide-react";
+import { Plus, Pencil, Eye, Trash2, Calendar, Search, Copy } from "lucide-react";
 
 interface Team {
   id: string;
@@ -47,6 +47,7 @@ const CoachPracticePlans = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
 
@@ -150,6 +151,73 @@ const CoachPracticePlans = () => {
     await loadData();
   };
 
+  const handleCopy = async (plan: Plan) => {
+    if (!user) return;
+
+    setCopyingId(plan.id);
+    try {
+      const copyPayload = {
+        coach_id: user.id,
+        team_id: plan.team_id,
+        name: `${plan.name} (Copy)`,
+        practice_date: plan.practice_date,
+        number_of_players: plan.number_of_players,
+        practice_focus: plan.practice_focus,
+        is_shared: false,
+        status: 1,
+      };
+
+      const { data: newPlan, error: newPlanError } = await (supabase as any)
+        .from("coach_practice_plans")
+        .insert(copyPayload)
+        .select("id")
+        .single();
+
+      if (newPlanError) throw new Error(newPlanError.message);
+
+      const { data: sourceItems, error: sourceItemsError } = await (supabase as any)
+        .from("coach_practice_plan_items")
+        .select("item_type, drill_id, file_path, note_title, note_text, duration_minutes, sort_order")
+        .eq("practice_plan_id", plan.id)
+        .order("sort_order", { ascending: true });
+
+      if (sourceItemsError) throw new Error(sourceItemsError.message);
+
+      if ((sourceItems ?? []).length > 0) {
+        const insertItems = sourceItems.map((item: any) => ({
+          practice_plan_id: newPlan.id,
+          item_type: item.item_type,
+          drill_id: item.drill_id,
+          file_path: item.file_path,
+          note_title: item.note_title,
+          note_text: item.note_text,
+          duration_minutes: item.duration_minutes,
+          sort_order: item.sort_order,
+        }));
+
+        const { error: insertItemsError } = await (supabase as any)
+          .from("coach_practice_plan_items")
+          .insert(insertItems);
+
+        if (insertItemsError) throw new Error(insertItemsError.message);
+      }
+
+      toast({ title: "Practice plan copied" });
+      await loadData();
+    } catch (err: any) {
+      toast({ title: "Failed to copy plan", description: err.message, variant: "destructive" });
+    } finally {
+      setCopyingId(null);
+    }
+  };
+
+  const formatPracticeDate = (value: string | null) => {
+    if (!value) return "-";
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
   return (
     <CoachLayout>
       <div className="space-y-6">
@@ -178,41 +246,82 @@ const CoachPracticePlans = () => {
         ) : filtered.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-muted-foreground">No practice plans found.</CardContent></Card>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {filtered.map((plan) => (
-              <Card key={plan.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                    {plan.is_shared && <span className="text-xs rounded-full px-2 py-1 bg-muted">Shared</span>}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="h-4 w-4" />
-                      {plan.practice_date ?? "No date set"}
-                    </div>
-                    <div>Team: {plan.team_id ? teamById[plan.team_id] ?? "Unknown team" : "None"}</div>
-                    <div>Players: {plan.number_of_players ?? "-"}</div>
-                    {plan.practice_focus && <div>Focus: {plan.practice_focus}</div>}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link to={`/coach/practice-plans/${plan.id}`}>
-                      <Button size="sm" className="gap-1"><Pencil className="h-3.5 w-3.5" /> Edit</Button>
-                    </Link>
-                    <Link to={`/coach/practice-plans/${plan.id}/view`}>
-                      <Button variant="outline" size="sm" className="gap-1"><Eye className="h-3.5 w-3.5" /> View</Button>
-                    </Link>
-                    <Button variant="destructive" size="sm" className="gap-1" onClick={() => handleDelete(plan)}>
-                      <Trash2 className="h-3.5 w-3.5" /> Delete
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Practice Plans List</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[940px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="py-3 pr-4 font-medium">Name</th>
+                      <th className="py-3 pr-4 font-medium">Practice Date</th>
+                      <th className="py-3 pr-4 font-medium">Team</th>
+                      <th className="py-3 pr-4 font-medium">Shared</th>
+                      <th className="py-3 pr-4 font-medium">Practice Focus</th>
+                      <th className="py-3 pr-0 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((plan) => (
+                      <tr key={plan.id} className="border-b last:border-0 hover:bg-muted/40">
+                        <td className="py-3 pr-4 font-medium text-foreground">{plan.name}</td>
+                        <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5" />
+                            {formatPracticeDate(plan.practice_date)}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">{plan.team_id ? teamById[plan.team_id] ?? "Unknown team" : "None"}</td>
+                        <td className="py-3 pr-4">
+                          {plan.is_shared ? (
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted">Yes</span>
+                          ) : (
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted text-muted-foreground">No</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">{plan.practice_focus || "-"}</td>
+                        <td className="py-3 pr-0">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={copyingId === plan.id ? "Copying" : "Copy"}
+                              disabled={copyingId === plan.id}
+                              onClick={() => handleCopy(plan)}
+                              className="h-8 w-8"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            <Link to={`/coach/practice-plans/${plan.id}/view`}>
+                              <Button variant="ghost" size="icon" title="View" className="h-8 w-8">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Link to={`/coach/practice-plans/${plan.id}`}>
+                              <Button variant="ghost" size="icon" title="Edit" className="h-8 w-8">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Delete"
+                              onClick={() => handleDelete(plan)}
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
 

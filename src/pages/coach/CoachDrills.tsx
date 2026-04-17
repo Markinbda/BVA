@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Pencil, Trash2, Timer, ExternalLink } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Timer, ExternalLink, Eye, Copy } from "lucide-react";
 
 interface Lookup {
   id: string;
@@ -108,6 +108,9 @@ const CoachDrills = () => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewingDrill, setViewingDrill] = useState<Drill | null>(null);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
   const [form, setForm] = useState<DrillForm>(emptyForm);
   const canImportLegacy = hasPermission("manage_import");
 
@@ -221,6 +224,11 @@ const CoachDrills = () => {
       courtIds: drillCourtMap[drill.id] ?? [],
     });
     setDialogOpen(true);
+  };
+
+  const openView = (drill: Drill) => {
+    setViewingDrill(drill);
+    setViewDialogOpen(true);
   };
 
   const toggleMulti = (key: "categoryIds" | "skillIds" | "courtIds", value: string) => {
@@ -339,6 +347,51 @@ const CoachDrills = () => {
     await loadData();
   };
 
+  const handleCopy = async (drill: Drill) => {
+    if (!user) return;
+
+    setCopyingId(drill.id);
+    try {
+      const payload = {
+        coach_id: user.id,
+        name: `${drill.name} (Copy)`,
+        link: drill.link,
+        duration_minutes: drill.duration_minutes,
+        description: drill.description,
+        equipment: drill.equipment,
+        player_groupings: drill.player_groupings,
+        time_intervals_reps: drill.time_intervals_reps,
+        assistant_role: drill.assistant_role,
+        coach_role: drill.coach_role,
+        age_group: drill.age_group,
+        coach_note: drill.coach_note,
+        is_shared: false,
+      };
+
+      const { data: newDrill, error: newDrillError } = await (supabase as any)
+        .from("coach_drills")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (newDrillError) throw new Error(newDrillError.message);
+
+      await saveMappings(newDrill.id, {
+        ...emptyForm,
+        categoryIds: drillCategoryMap[drill.id] ?? [],
+        skillIds: drillSkillMap[drill.id] ?? [],
+        courtIds: drillCourtMap[drill.id] ?? [],
+      });
+
+      toast({ title: "Drill copied" });
+      await loadData();
+    } catch (err: any) {
+      toast({ title: "Failed to copy drill", description: err.message, variant: "destructive" });
+    } finally {
+      setCopyingId(null);
+    }
+  };
+
   const handleImportLegacy = async () => {
     if (!user) return;
 
@@ -447,59 +500,162 @@ const CoachDrills = () => {
         ) : filteredDrills.length === 0 ? (
           <Card><CardContent className="py-10 text-center text-muted-foreground">No drills found.</CardContent></Card>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {filteredDrills.map((drill) => {
-              const categoryBadges = (drillCategoryMap[drill.id] ?? []).map((id) => categoryNameById[id]).filter(Boolean);
-              const skillBadges = (drillSkillMap[drill.id] ?? []).map((id) => skillNameById[id]).filter(Boolean);
-              const courtBadges = (drillCourtMap[drill.id] ?? []).map((id) => courtNameById[id]).filter(Boolean);
-              const isOwner = drill.coach_id === user?.id;
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Drills List</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1060px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="py-3 pr-4 font-medium">Name</th>
+                      <th className="py-3 pr-4 font-medium">Duration</th>
+                      <th className="py-3 pr-4 font-medium">Categories</th>
+                      <th className="py-3 pr-4 font-medium">Skills</th>
+                      <th className="py-3 pr-4 font-medium">Courts</th>
+                      <th className="py-3 pr-4 font-medium">Shared</th>
+                      <th className="py-3 pr-0 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDrills.map((drill) => {
+                      const categoryBadges = (drillCategoryMap[drill.id] ?? []).map((id) => categoryNameById[id]).filter(Boolean);
+                      const skillBadges = (drillSkillMap[drill.id] ?? []).map((id) => skillNameById[id]).filter(Boolean);
+                      const courtBadges = (drillCourtMap[drill.id] ?? []).map((id) => courtNameById[id]).filter(Boolean);
+                      const isOwner = drill.coach_id === user?.id;
 
-              return (
-                <Card key={drill.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <CardTitle className="text-lg">{drill.name}</CardTitle>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {drill.duration_minutes != null && (
-                          <Badge variant="secondary" className="gap-1"><Timer className="h-3 w-3" /> {drill.duration_minutes} min</Badge>
-                        )}
-                        {drill.is_shared && <Badge variant="outline">Shared</Badge>}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {drill.description && <p className="text-sm text-muted-foreground line-clamp-3">{drill.description}</p>}
-
-                    {drill.link && (
-                      <a href={drill.link} target="_blank" rel="noreferrer" className="text-sm text-primary inline-flex items-center gap-1 hover:underline">
-                        Open reference <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-
-                    <div className="flex flex-wrap gap-1.5">
-                      {categoryBadges.map((name) => <Badge key={`${drill.id}-${name}`} variant="outline">{name}</Badge>)}
-                      {skillBadges.map((name) => <Badge key={`${drill.id}-${name}`} variant="secondary">{name}</Badge>)}
-                      {courtBadges.map((name) => <Badge key={`${drill.id}-${name}`} className="bg-slate-600 hover:bg-slate-600">{name}</Badge>)}
-                      {drill.age_group && <Badge variant="outline">Age: {drill.age_group}</Badge>}
-                    </div>
-
-                    {isOwner && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button variant="outline" size="sm" className="gap-1" onClick={() => openEdit(drill)}>
-                          <Pencil className="h-3.5 w-3.5" /> Edit
-                        </Button>
-                        <Button variant="destructive" size="sm" className="gap-1" onClick={() => handleDelete(drill)}>
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                      return (
+                        <tr key={drill.id} className="border-b last:border-0 hover:bg-muted/40">
+                          <td className="py-3 pr-4 font-medium text-foreground">{drill.name}</td>
+                          <td className="py-3 pr-4 text-muted-foreground whitespace-nowrap">
+                            {drill.duration_minutes != null ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Timer className="h-3.5 w-3.5" />
+                                {drill.duration_minutes} min
+                              </span>
+                            ) : "-"}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="flex flex-wrap gap-1">
+                              {categoryBadges.length === 0 ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : (
+                                categoryBadges.slice(0, 2).map((name) => <Badge key={`${drill.id}-${name}`} variant="outline">{name}</Badge>)
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="flex flex-wrap gap-1">
+                              {skillBadges.length === 0 ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : (
+                                skillBadges.slice(0, 2).map((name) => <Badge key={`${drill.id}-${name}`} variant="secondary">{name}</Badge>)
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <div className="flex flex-wrap gap-1">
+                              {courtBadges.length === 0 ? (
+                                <span className="text-muted-foreground">-</span>
+                              ) : (
+                                courtBadges.slice(0, 2).map((name) => <Badge key={`${drill.id}-${name}`} className="bg-slate-600 hover:bg-slate-600">{name}</Badge>)
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            {drill.is_shared ? (
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted">Yes</span>
+                            ) : (
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-xs bg-muted text-muted-foreground">No</span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-0">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title={copyingId === drill.id ? "Copying" : "Copy"}
+                                disabled={copyingId === drill.id}
+                                onClick={() => handleCopy(drill)}
+                                className="h-8 w-8"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" title="View" onClick={() => openView(drill)} className="h-8 w-8">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {isOwner && (
+                                <Button variant="ghost" size="icon" title="Edit" onClick={() => openEdit(drill)} className="h-8 w-8">
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {isOwner && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Delete"
+                                  onClick={() => handleDelete(drill)}
+                                  className="h-8 w-8 text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {drill.link && (
+                                <a href={drill.link} target="_blank" rel="noreferrer" title="Open reference" className="inline-flex">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
+
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{viewingDrill?.name ?? "Drill Details"}</DialogTitle>
+          </DialogHeader>
+          {viewingDrill && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div><span className="text-muted-foreground">Duration:</span> {viewingDrill.duration_minutes ?? "-"}</div>
+                <div><span className="text-muted-foreground">Age Group:</span> {viewingDrill.age_group ?? "-"}</div>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Description:</span>
+                <p className="mt-1 whitespace-pre-wrap">{viewingDrill.description || "-"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Equipment:</span>
+                <p className="mt-1 whitespace-pre-wrap">{viewingDrill.equipment || "-"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Coach Note:</span>
+                <p className="mt-1 whitespace-pre-wrap">{viewingDrill.coach_note || "-"}</p>
+              </div>
+              {viewingDrill.link && (
+                <a href={viewingDrill.link} target="_blank" rel="noreferrer" className="text-primary inline-flex items-center gap-1 hover:underline">
+                  Open reference <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
