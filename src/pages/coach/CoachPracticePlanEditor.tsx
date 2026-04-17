@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowUp, ArrowDown, Trash2, Plus, Eye, Save } from "lucide-react";
+import { ArrowUp, ArrowDown, Trash2, Plus, Eye, Save, Copy } from "lucide-react";
 
 interface Team {
   id: string;
@@ -70,6 +70,8 @@ const CoachPracticePlanEditor = () => {
   const [newNoteTitle, setNewNoteTitle] = useState("");
   const [newNoteText, setNewNoteText] = useState("");
   const [newNoteDuration, setNewNoteDuration] = useState("");
+  const [durationDrafts, setDurationDrafts] = useState<Record<string, string>>({});
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   const loadData = async () => {
     if (!id || !user) return;
@@ -92,10 +94,20 @@ const CoachPracticePlanEditor = () => {
       return;
     }
 
+    const loadedItems = (itemsRes.data ?? []) as PlanItem[];
+
     setPlan(planRes.data);
-    setItems((itemsRes.data ?? []) as PlanItem[]);
+    setItems(loadedItems);
     setDrills(drillsRes.data ?? []);
     setTeams(teamsRes.data ?? []);
+    setDurationDrafts(
+      Object.fromEntries(
+        loadedItems.map((item) => [
+          item.id,
+          item.duration_minutes != null ? String(item.duration_minutes) : "",
+        ])
+      )
+    );
     setLoading(false);
   };
 
@@ -198,57 +210,118 @@ const CoachPracticePlanEditor = () => {
     await loadData();
   };
 
+  const saveItemOrder = async (orderedItems: PlanItem[]) => {
+    const updates = orderedItems.map((item, idx) =>
+      (supabase as any).from("coach_practice_plan_items").update({ sort_order: idx }).eq("id", item.id)
+    );
+
+    const results = await Promise.all(updates);
+    const failed = results.find((r) => r.error);
+    if (failed?.error) {
+      toast({ title: "Failed to reorder items", description: failed.error.message, variant: "destructive" });
+      return false;
+    }
+
+    await loadData();
+    return true;
+  };
+
   const deleteItem = async (itemId: string) => {
     const { error } = await (supabase as any).from("coach_practice_plan_items").delete().eq("id", itemId);
     if (error) {
       toast({ title: "Failed to delete item", description: error.message, variant: "destructive" });
       return;
     }
-    await normalizeSortOrder();
+    await loadData();
   };
 
-  const normalizeSortOrder = async () => {
-    if (!id) return;
-    const { data, error } = await (supabase as any)
-      .from("coach_practice_plan_items")
-      .select("id")
-      .eq("practice_plan_id", id)
-      .order("sort_order");
-
-    if (error) {
-      toast({ title: "Failed to reorder items", description: error.message, variant: "destructive" });
+  const updateItemDuration = async (itemId: string) => {
+    const draft = durationDrafts[itemId] ?? "";
+    const duration = draft.trim() === "" ? null : Number(draft);
+    if (duration != null && (Number.isNaN(duration) || duration < 0)) {
+      toast({ title: "Duration must be a positive number", variant: "destructive" });
       return;
     }
 
-    const updates = (data ?? []).map((row: any, idx: number) =>
-      (supabase as any).from("coach_practice_plan_items").update({ sort_order: idx }).eq("id", row.id)
-    );
+    const { error } = await (supabase as any)
+      .from("coach_practice_plan_items")
+      .update({ duration_minutes: duration })
+      .eq("id", itemId);
 
-    await Promise.all(updates);
+    if (error) {
+      toast({ title: "Failed to update duration", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, duration_minutes: duration } : i)));
+  };
+
+  const duplicateItem = async (item: PlanItem) => {
+    if (!id) return;
+
+    const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
+    const insertAt = item.sort_order + 1;
+
+    const shiftTargets = sorted.filter((i) => i.sort_order >= insertAt).sort((a, b) => b.sort_order - a.sort_order);
+    for (const target of shiftTargets) {
+      const { error } = await (supabase as any)
+        .from("coach_practice_plan_items")
+        .update({ sort_order: target.sort_order + 1 })
+        .eq("id", target.id);
+      if (error) {
+        toast({ title: "Failed to duplicate item", description: error.message, variant: "destructive" });
+        return;
+      }
+    }
+
+    const payload = {
+      practice_plan_id: id,
+      item_type: item.item_type,
+      drill_id: item.drill_id,
+      note_title: item.note_title,
+      note_text: item.note_text,
+      duration_minutes: item.duration_minutes,
+      sort_order: insertAt,
+    };
+
+    const { error } = await (supabase as any).from("coach_practice_plan_items").insert(payload);
+    if (error) {
+      toast({ title: "Failed to duplicate item", description: error.message, variant: "destructive" });
+      return;
+    }
+
     await loadData();
   };
 
   const moveItem = async (itemId: string, direction: "up" | "down") => {
-    const currentIndex = items.findIndex((i) => i.id === itemId);
+    const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
+    const currentIndex = sorted.findIndex((i) => i.id === itemId);
     if (currentIndex < 0) return;
 
     const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= items.length) return;
+    if (targetIndex < 0 || targetIndex >= sorted.length) return;
 
-    const current = items[currentIndex];
-    const target = items[targetIndex];
+    const reordered = [...sorted];
+    const [moved] = reordered.splice(currentIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
 
-    const [resA, resB] = await Promise.all([
-      (supabase as any).from("coach_practice_plan_items").update({ sort_order: target.sort_order }).eq("id", current.id),
-      (supabase as any).from("coach_practice_plan_items").update({ sort_order: current.sort_order }).eq("id", target.id),
-    ]);
+    await saveItemOrder(reordered);
+  };
 
-    if (resA.error || resB.error) {
-      toast({ title: "Failed to reorder", description: resA.error?.message || resB.error?.message, variant: "destructive" });
-      return;
-    }
+  const handleDropOnItem = async (targetId: string) => {
+    if (!draggedItemId || draggedItemId === targetId) return;
 
-    await loadData();
+    const sorted = [...items].sort((a, b) => a.sort_order - b.sort_order);
+    const from = sorted.findIndex((i) => i.id === draggedItemId);
+    const to = sorted.findIndex((i) => i.id === targetId);
+    if (from < 0 || to < 0) return;
+
+    const reordered = [...sorted];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+
+    setDraggedItemId(null);
+    await saveItemOrder(reordered);
   };
 
   if (loading) {
@@ -404,16 +477,37 @@ const CoachPracticePlanEditor = () => {
                   const duration = item.duration_minutes ?? drill?.duration_minutes ?? null;
 
                   return (
-                    <div key={item.id} className="border rounded-md p-3">
+                    <div
+                      key={item.id}
+                      className="border rounded-md p-3"
+                      draggable
+                      onDragStart={() => setDraggedItemId(item.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDropOnItem(item.id)}
+                    >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
+                        <div className="space-y-2 w-full">
                           <p className="text-sm font-medium">
                             {item.item_type === "drill" ? `Drill: ${drill?.name ?? "Unknown"}` : `Note: ${item.note_title ?? "Untitled"}`}
                           </p>
                           {item.item_type === "note" && item.note_text && (
                             <p className="text-sm text-muted-foreground whitespace-pre-wrap">{item.note_text}</p>
                           )}
-                          <p className="text-xs text-muted-foreground">Duration: {duration ?? "-"} minutes</p>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>Duration override:</span>
+                            <Input
+                              className="h-8 w-24 text-xs"
+                              type="number"
+                              min={0}
+                              value={durationDrafts[item.id] ?? ""}
+                              onChange={(e) => setDurationDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              onBlur={() => updateItemDuration(item.id)}
+                            />
+                            <span>minutes</span>
+                            {item.duration_minutes == null && drill?.duration_minutes != null && (
+                              <span className="text-[11px]">(default drill duration: {drill.duration_minutes})</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <Button variant="outline" size="icon" onClick={() => moveItem(item.id, "up")} disabled={index === 0}>
@@ -421,6 +515,9 @@ const CoachPracticePlanEditor = () => {
                           </Button>
                           <Button variant="outline" size="icon" onClick={() => moveItem(item.id, "down")} disabled={index === items.length - 1}>
                             <ArrowDown className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="icon" onClick={() => duplicateItem(item)}>
+                            <Copy className="h-4 w-4" />
                           </Button>
                           <Button variant="destructive" size="icon" onClick={() => deleteItem(item.id)}>
                             <Trash2 className="h-4 w-4" />
