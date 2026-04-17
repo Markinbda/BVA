@@ -115,6 +115,7 @@ const DrillWhiteboardModal = ({
   const [isEraser, setIsEraser] = useState(false);
   const [shapeStartPoint, setShapeStartPoint] = useState<{ x: number; y: number } | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const undoStackRef = useRef<ImageData[]>([]);
   const tokenColorById = useMemo(() => {
     const map: Record<string, string> = {};
     for (const token of tokens) map[token.id] = token.color;
@@ -138,6 +139,7 @@ const DrillWhiteboardModal = ({
 
     setTokens([]);
     setShapeStartPoint(null);
+    undoStackRef.current = [];
 
     const drawCanvas = drawCanvasRef.current;
     if (!drawCanvas) return;
@@ -155,6 +157,18 @@ const DrillWhiteboardModal = ({
     };
     img.src = initialDrawing;
   }, [open, initialDrawing]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "z") {
+        event.preventDefault();
+        undo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   useEffect(() => {
     if (!draggingTokenId) return;
@@ -261,6 +275,23 @@ const DrillWhiteboardModal = ({
     ctx.restore();
   };
 
+  const saveSnapshot = () => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    undoStackRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  };
+
+  const undo = () => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const snapshot = undoStackRef.current.pop();
+    if (snapshot) ctx.putImageData(snapshot, 0, 0);
+  };
+
   const startDrawing = (event: DrawingEvent) => {
     event.preventDefault();
     const canvas = drawCanvasRef.current;
@@ -273,6 +304,7 @@ const DrillWhiteboardModal = ({
       return;
     }
 
+    saveSnapshot();
     setIsDrawing(true);
     lastPointRef.current = point;
   };
@@ -296,6 +328,7 @@ const DrillWhiteboardModal = ({
         const canvas = drawCanvasRef.current;
         if (canvas) {
           const point = lastPointRef.current ?? shapeStartPoint;
+          saveSnapshot();
           drawShape(shapeStartPoint, point);
         }
       }
@@ -315,6 +348,7 @@ const DrillWhiteboardModal = ({
     const ctx = drawCanvas.getContext("2d");
     if (!ctx) return;
 
+    saveSnapshot();
     ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
     setTokens([]);
     setShapeStartPoint(null);
@@ -468,6 +502,9 @@ const DrillWhiteboardModal = ({
             className="h-9 w-12 cursor-pointer rounded border"
             aria-label="Pen color"
           />
+          <Button type="button" variant="outline" size="sm" onClick={undo} title="Undo (Ctrl+Z)">
+            Undo
+          </Button>
           <Button type="button" variant="outline" size="sm" onClick={clearDrawing}>
             Clear
           </Button>
