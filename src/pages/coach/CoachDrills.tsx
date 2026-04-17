@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
+import DrillWhiteboardModal from "@/components/coach/DrillWhiteboardModal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +58,7 @@ interface Drill {
   coach_role: string | null;
   age_group: string | null;
   coach_note: string | null;
+  diagram_path: string | null;
   show_whiteboard_template: boolean;
   drill_video_path: string | null;
   is_shared: boolean;
@@ -75,6 +77,7 @@ interface DrillForm {
   coach_role: string;
   age_group: string;
   coach_note: string;
+  diagram_path: string;
   show_whiteboard_template: boolean;
   drill_video_path: string;
   is_shared: boolean;
@@ -95,6 +98,7 @@ const emptyForm: DrillForm = {
   coach_role: "",
   age_group: "",
   coach_note: "",
+  diagram_path: "",
   show_whiteboard_template: true,
   drill_video_path: "",
   is_shared: false,
@@ -129,6 +133,7 @@ const CoachDrills = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewingDrill, setViewingDrill] = useState<Drill | null>(null);
+  const [whiteboardOpen, setWhiteboardOpen] = useState(false);
   const [copyingId, setCopyingId] = useState<string | null>(null);
   const [isListeningField, setIsListeningField] = useState<"description" | "coach_note" | null>(null);
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
@@ -289,6 +294,7 @@ const CoachDrills = () => {
       coach_role: drill.coach_role ?? "",
       age_group: drill.age_group ?? "",
       coach_note: drill.coach_note ?? "",
+      diagram_path: drill.diagram_path ?? "",
       show_whiteboard_template: drill.show_whiteboard_template ?? true,
       drill_video_path: drill.drill_video_path ?? "",
       is_shared: drill.is_shared,
@@ -378,6 +384,7 @@ const CoachDrills = () => {
       coach_role: form.coach_role.trim() || null,
       age_group: form.age_group.trim() || null,
       coach_note: form.coach_note.trim() || null,
+      diagram_path: form.diagram_path.trim() || null,
       show_whiteboard_template: form.show_whiteboard_template,
       drill_video_path: form.drill_video_path.trim() || null,
       is_shared: form.is_shared,
@@ -442,6 +449,7 @@ const CoachDrills = () => {
         coach_role: drill.coach_role,
         age_group: drill.age_group,
         coach_note: drill.coach_note,
+        diagram_path: drill.diagram_path,
         show_whiteboard_template: drill.show_whiteboard_template,
         drill_video_path: drill.drill_video_path,
         is_shared: false,
@@ -895,6 +903,14 @@ const CoachDrills = () => {
                 <span className="text-muted-foreground">Coach Note:</span>
                 <p className="mt-1 whitespace-pre-wrap">{viewingDrill.coach_note || "-"}</p>
               </div>
+              {viewingDrill.diagram_path && (
+                <div>
+                  <span className="text-muted-foreground">Whiteboard:</span>
+                  <div className="mt-2 overflow-hidden rounded-md border bg-white" style={{ aspectRatio: "16 / 9" }}>
+                    <img src={viewingDrill.diagram_path} alt="Drill whiteboard" className="h-full w-full object-contain" />
+                  </div>
+                </div>
+              )}
               <div>
                 <span className="text-muted-foreground">Whiteboard Template:</span>{" "}
                 {viewingDrill.show_whiteboard_template ? "On" : "Off"}
@@ -1040,6 +1056,32 @@ const CoachDrills = () => {
             />
           </div>
 
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <Label>Drill Whiteboard</Label>
+                <p className="text-xs text-muted-foreground">Open the board to draw player movements and save it with this drill.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setWhiteboardOpen(true)}>
+                  Open Whiteboard
+                </Button>
+                {form.diagram_path && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setForm((p) => ({ ...p, diagram_path: "" }))}>
+                    Clear Drawing
+                  </Button>
+                )}
+              </div>
+            </div>
+            {form.diagram_path ? (
+              <div className="overflow-hidden rounded-md border bg-white" style={{ aspectRatio: "16 / 9" }}>
+                <img src={form.diagram_path} alt="Whiteboard preview" className="h-full w-full object-contain" />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No drawing saved yet.</p>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Categories</Label>
@@ -1087,6 +1129,19 @@ const CoachDrills = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DrillWhiteboardModal
+        open={whiteboardOpen}
+        onOpenChange={setWhiteboardOpen}
+        initialDrawing={form.diagram_path}
+        showTemplate={form.show_whiteboard_template}
+        onShowTemplateChange={(show) => setForm((prev) => ({ ...prev, show_whiteboard_template: show }))}
+        onSave={(drawing) => {
+          setForm((prev) => ({ ...prev, diagram_path: drawing }));
+          setWhiteboardOpen(false);
+          toast({ title: drawing ? "Whiteboard saved" : "Whiteboard cleared" });
+        }}
+      />
     </CoachLayout>
   );
 };
