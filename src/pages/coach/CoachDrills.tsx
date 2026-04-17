@@ -86,11 +86,12 @@ const emptyForm: DrillForm = {
 };
 
 const CoachDrills = () => {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importingLegacy, setImportingLegacy] = useState(false);
   const [drills, setDrills] = useState<Drill[]>([]);
   const [categories, setCategories] = useState<Lookup[]>([]);
   const [skills, setSkills] = useState<Lookup[]>([]);
@@ -108,6 +109,7 @@ const CoachDrills = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<DrillForm>(emptyForm);
+  const canImportLegacy = hasPermission("manage_import");
 
   const loadData = async () => {
     if (!user) return;
@@ -337,6 +339,44 @@ const CoachDrills = () => {
     await loadData();
   };
 
+  const handleImportLegacy = async () => {
+    if (!user) return;
+
+    const confirmed = confirm(
+      "Import legacy drills and practice plans now? This is idempotent and will skip records already imported."
+    );
+    if (!confirmed) return;
+
+    setImportingLegacy(true);
+    try {
+      const { data, error } = await (supabase as any).rpc("import_legacy_drills_and_practice_plans", {
+        p_fallback_coach_id: user.id,
+        p_limit: null,
+      });
+      if (error) throw new Error(error.message);
+
+      const summary = (data ?? {}) as Record<string, unknown>;
+      const drillsImported = Number(summary.drills_imported ?? 0);
+      const plansImported = Number(summary.practice_plans_imported ?? 0);
+      const itemsImported = Number(summary.practice_plan_items_imported ?? 0);
+
+      toast({
+        title: "Legacy import complete",
+        description: `${drillsImported} drills, ${plansImported} plans, ${itemsImported} plan items imported.`,
+      });
+
+      await loadData();
+    } catch (err: any) {
+      toast({
+        title: "Legacy import failed",
+        description: err?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setImportingLegacy(false);
+    }
+  };
+
   return (
     <CoachLayout>
       <div className="space-y-6">
@@ -345,10 +385,17 @@ const CoachDrills = () => {
             <h1 className="text-2xl font-bold text-foreground">Drill Library</h1>
             <p className="text-sm text-muted-foreground">Create drills and reuse them across practice plans.</p>
           </div>
-          <Button onClick={openCreate} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Drill
-          </Button>
+          <div className="flex items-center gap-2">
+            {canImportLegacy && (
+              <Button variant="outline" onClick={handleImportLegacy} disabled={importingLegacy}>
+                {importingLegacy ? "Importing..." : "Import Legacy Data"}
+              </Button>
+            )}
+            <Button onClick={openCreate} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Drill
+            </Button>
+          </div>
         </div>
 
         <Card>
