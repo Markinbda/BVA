@@ -93,6 +93,10 @@ import CoachEmailHistory from "./pages/coach/CoachEmailHistory";
 import CoachVideos from "./pages/coach/CoachVideos";
 import CoachVideoReview from "./pages/coach/CoachVideoReview";
 import CoachLiveStream from "./pages/coach/CoachLiveStream";
+import CoachDrills from "./pages/coach/CoachDrills";
+import CoachPracticePlans from "./pages/coach/CoachPracticePlans";
+import CoachPracticePlanEditor from "./pages/coach/CoachPracticePlanEditor";
+import CoachPracticePlanView from "./pages/coach/CoachPracticePlanView";
 
 const queryClient = new QueryClient();
 
@@ -194,6 +198,10 @@ const App = () => (
             <Route path="/coach/videos" element={<CoachRoute><CoachVideos /></CoachRoute>} />
             <Route path="/coach/video-review/:videoId" element={<CoachRoute><CoachVideoReview /></CoachRoute>} />
             <Route path="/coach/live" element={<CoachRoute><CoachLiveStream /></CoachRoute>} />
+            <Route path="/coach/drills" element={<CoachRoute><CoachDrills /></CoachRoute>} />
+            <Route path="/coach/practice-plans" element={<CoachRoute><CoachPracticePlans /></CoachRoute>} />
+            <Route path="/coach/practice-plans/:id" element={<CoachRoute><CoachPracticePlanEditor /></CoachRoute>} />
+            <Route path="/coach/practice-plans/:id/view" element={<CoachRoute><CoachPracticePlanView /></CoachRoute>} />
             <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
             <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />
 

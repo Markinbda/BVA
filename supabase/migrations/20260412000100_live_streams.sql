@@ -2,7 +2,7 @@
 -- LIVE STREAMS TABLE
 -- =============================================
 
-CREATE TABLE public.live_streams (
+CREATE TABLE IF NOT EXISTS public.live_streams (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   coach_id                 UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title                    TEXT NOT NULL,
@@ -21,21 +21,24 @@ CREATE TABLE public.live_streams (
 ALTER TABLE public.live_streams ENABLE ROW LEVEL SECURITY;
 
 -- Coaches can read/manage their own streams
+DROP POLICY IF EXISTS "Coaches can manage own live streams" ON public.live_streams;
 CREATE POLICY "Coaches can manage own live streams"
   ON public.live_streams FOR ALL
   USING (auth.uid() = coach_id)
   WITH CHECK (auth.uid() = coach_id);
 
 -- Admins can manage all streams
+DROP POLICY IF EXISTS "Admins can manage all live streams" ON public.live_streams;
 CREATE POLICY "Admins can manage all live streams"
   ON public.live_streams FOR ALL
   USING (public.has_role(auth.uid(), 'admin'::app_role));
 
 -- Public can read is_live streams (for homepage viewer)
+DROP POLICY IF EXISTS "Public can view live streams" ON public.live_streams;
 CREATE POLICY "Public can view live streams"
   ON public.live_streams FOR SELECT
   USING (is_live = true);
 
 -- Indexes
-CREATE INDEX live_streams_coach_id_idx ON public.live_streams (coach_id);
-CREATE INDEX live_streams_is_live_idx  ON public.live_streams (is_live) WHERE is_live = true;
+CREATE INDEX IF NOT EXISTS live_streams_coach_id_idx ON public.live_streams (coach_id);
+CREATE INDEX IF NOT EXISTS live_streams_is_live_idx  ON public.live_streams (is_live) WHERE is_live = true;

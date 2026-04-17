@@ -13,12 +13,14 @@ CREATE TABLE IF NOT EXISTS youtube_playlists (
 ALTER TABLE youtube_playlists ENABLE ROW LEVEL SECURITY;
 
 -- Any authenticated user can read playlists (for category dropdown)
+DROP POLICY IF EXISTS "Authenticated users can read youtube_playlists" ON youtube_playlists;
 CREATE POLICY "Authenticated users can read youtube_playlists"
   ON youtube_playlists FOR SELECT
   TO authenticated
   USING (true);
 
 -- Service role only for writes (done via edge function with service key)
+DROP POLICY IF EXISTS "Service role can manage youtube_playlists" ON youtube_playlists;
 CREATE POLICY "Service role can manage youtube_playlists"
   ON youtube_playlists FOR ALL
   TO service_role

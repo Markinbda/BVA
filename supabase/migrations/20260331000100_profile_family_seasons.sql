@@ -62,14 +62,19 @@ CREATE TABLE IF NOT EXISTS public.family_members (
 
 ALTER TABLE public.family_members ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own family members" ON public.family_members;
 CREATE POLICY "Users can view own family members" ON public.family_members
   FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert own family members" ON public.family_members;
 CREATE POLICY "Users can insert own family members" ON public.family_members
   FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update own family members" ON public.family_members;
 CREATE POLICY "Users can update own family members" ON public.family_members
   FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete own family members" ON public.family_members;
 CREATE POLICY "Users can delete own family members" ON public.family_members
   FOR DELETE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Admins can manage all family members" ON public.family_members;
 CREATE POLICY "Admins can manage all family members" ON public.family_members
   FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
@@ -95,7 +100,9 @@ CREATE TABLE IF NOT EXISTS public.season_participation (
 
 ALTER TABLE public.season_participation ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view own season history" ON public.season_participation;
 CREATE POLICY "Users can view own season history" ON public.season_participation
   FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Admins can manage all season participation" ON public.season_participation;
 CREATE POLICY "Admins can manage all season participation" ON public.season_participation
   FOR ALL USING (public.has_role(auth.uid(), 'admin'));

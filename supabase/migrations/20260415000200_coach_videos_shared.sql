@@ -17,6 +17,7 @@ AS $$
 $$;
 
 -- 2. Allow any user with manage_coaches permission to read all_coaches videos
+DROP POLICY IF EXISTS "coach_videos_select_shared" ON public.coach_videos;
 CREATE POLICY "coach_videos_select_shared"
   ON public.coach_videos
   FOR SELECT

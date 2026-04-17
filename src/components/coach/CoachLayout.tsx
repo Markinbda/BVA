@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Video,
   Radio,
+  Dumbbell,
+  CalendarRange,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -19,6 +21,8 @@ import { supabase } from "@/integrations/supabase/client";
 const BASE_NAV = [
   { path: "/coach", label: "Dashboard", icon: LayoutDashboard },
   { path: "/coach/players", label: "Players", icon: Users },
+  { path: "/coach/drills", label: "Drill Library", icon: Dumbbell },
+  { path: "/coach/practice-plans", label: "Practice Plans", icon: CalendarRange },
   { path: "/coach/videos", label: "Video Library", icon: Video },
   { path: "/coach/live", label: "Live Streaming", icon: Radio },
   { path: "/coach/email", label: "Send Email", icon: Mail },

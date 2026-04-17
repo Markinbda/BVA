@@ -12,21 +12,26 @@ CREATE TABLE IF NOT EXISTS public.follow_requests (
 ALTER TABLE public.follow_requests ENABLE ROW LEVEL SECURITY;
 
 -- Users can see requests they sent or received
+DROP POLICY IF EXISTS "Users can view own follow requests" ON public.follow_requests;
 CREATE POLICY "Users can view own follow requests" ON public.follow_requests
   FOR SELECT USING (auth.uid() = requester_id OR auth.uid() = recipient_id);
 
 -- Users can send follow requests
+DROP POLICY IF EXISTS "Users can send follow requests" ON public.follow_requests;
 CREATE POLICY "Users can send follow requests" ON public.follow_requests
   FOR INSERT WITH CHECK (auth.uid() = requester_id);
 
 -- Recipients can update status (accept/decline); requesters can cancel (delete only)
+DROP POLICY IF EXISTS "Recipients can update follow requests" ON public.follow_requests;
 CREATE POLICY "Recipients can update follow requests" ON public.follow_requests
   FOR UPDATE USING (auth.uid() = recipient_id);
 
 -- Requester can cancel / delete their own request; recipient can delete declined
+DROP POLICY IF EXISTS "Users can delete own follow requests" ON public.follow_requests;
 CREATE POLICY "Users can delete own follow requests" ON public.follow_requests
   FOR DELETE USING (auth.uid() = requester_id OR auth.uid() = recipient_id);
 
 -- Admins full access
+DROP POLICY IF EXISTS "Admins can manage all follow requests" ON public.follow_requests;
 CREATE POLICY "Admins can manage all follow requests" ON public.follow_requests
   FOR ALL USING (public.has_role(auth.uid(), 'admin'));

@@ -14,11 +14,13 @@ CREATE TABLE IF NOT EXISTS public.team_coaches (
 ALTER TABLE public.team_coaches ENABLE ROW LEVEL SECURITY;
 
 -- Admins can manage all team_coaches
+DROP POLICY IF EXISTS "Admins can manage team_coaches" ON public.team_coaches;
 CREATE POLICY "Admins can manage team_coaches"
   ON public.team_coaches FOR ALL
   USING (public.has_role(auth.uid(), 'admin'::app_role));
 
 -- Coaches can read their own assignments
+DROP POLICY IF EXISTS "Coaches can read own assignments" ON public.team_coaches;
 CREATE POLICY "Coaches can read own assignments"
   ON public.team_coaches FOR SELECT
   USING (auth.uid() = user_id);
@@ -38,9 +40,10 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS enforce_team_coaches_limit ON public.team_coaches;
 CREATE TRIGGER enforce_team_coaches_limit
   BEFORE INSERT ON public.team_coaches
   FOR EACH ROW EXECUTE FUNCTION public.check_team_coaches_limit();
 
-CREATE INDEX team_coaches_team_id_idx ON public.team_coaches (team_id);
-CREATE INDEX team_coaches_user_id_idx ON public.team_coaches (user_id);
+CREATE INDEX IF NOT EXISTS team_coaches_team_id_idx ON public.team_coaches (team_id);
+CREATE INDEX IF NOT EXISTS team_coaches_user_id_idx ON public.team_coaches (user_id);

@@ -14,11 +14,13 @@ CREATE TABLE IF NOT EXISTS public.video_share_tokens (
 -- RLS: admins can do everything; players can read tokens tied to their email
 ALTER TABLE public.video_share_tokens ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Admins can manage share tokens" ON public.video_share_tokens;
 CREATE POLICY "Admins can manage share tokens"
   ON public.video_share_tokens FOR ALL
   USING (public.has_role(auth.uid(), 'admin'::app_role));
 
 -- Logged-in players can read their own share tokens (to build their video library)
+DROP POLICY IF EXISTS "Players can read own share tokens" ON public.video_share_tokens;
 CREATE POLICY "Players can read own share tokens"
   ON public.video_share_tokens FOR SELECT
   USING (
