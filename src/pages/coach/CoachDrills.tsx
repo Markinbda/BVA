@@ -57,6 +57,7 @@ interface Drill {
   coach_role: string | null;
   age_group: string | null;
   coach_note: string | null;
+  show_whiteboard_template: boolean;
   drill_video_path: string | null;
   is_shared: boolean;
   created_at: string;
@@ -74,6 +75,7 @@ interface DrillForm {
   coach_role: string;
   age_group: string;
   coach_note: string;
+  show_whiteboard_template: boolean;
   drill_video_path: string;
   is_shared: boolean;
   categoryIds: string[];
@@ -93,6 +95,7 @@ const emptyForm: DrillForm = {
   coach_role: "",
   age_group: "",
   coach_note: "",
+  show_whiteboard_template: true,
   drill_video_path: "",
   is_shared: false,
   categoryIds: [],
@@ -286,6 +289,7 @@ const CoachDrills = () => {
       coach_role: drill.coach_role ?? "",
       age_group: drill.age_group ?? "",
       coach_note: drill.coach_note ?? "",
+      show_whiteboard_template: drill.show_whiteboard_template ?? true,
       drill_video_path: drill.drill_video_path ?? "",
       is_shared: drill.is_shared,
       categoryIds: drillCategoryMap[drill.id] ?? [],
@@ -374,6 +378,7 @@ const CoachDrills = () => {
       coach_role: form.coach_role.trim() || null,
       age_group: form.age_group.trim() || null,
       coach_note: form.coach_note.trim() || null,
+      show_whiteboard_template: form.show_whiteboard_template,
       drill_video_path: form.drill_video_path.trim() || null,
       is_shared: form.is_shared,
     };
@@ -437,6 +442,7 @@ const CoachDrills = () => {
         coach_role: drill.coach_role,
         age_group: drill.age_group,
         coach_note: drill.coach_note,
+        show_whiteboard_template: drill.show_whiteboard_template,
         drill_video_path: drill.drill_video_path,
         is_shared: false,
       };
@@ -889,6 +895,10 @@ const CoachDrills = () => {
                 <span className="text-muted-foreground">Coach Note:</span>
                 <p className="mt-1 whitespace-pre-wrap">{viewingDrill.coach_note || "-"}</p>
               </div>
+              <div>
+                <span className="text-muted-foreground">Whiteboard Template:</span>{" "}
+                {viewingDrill.show_whiteboard_template ? "On" : "Off"}
+              </div>
               {(viewVideoUrl || viewingDrill.drill_video_path) && (
                 <div>
                   <span className="text-muted-foreground">Drill Video:</span>
@@ -1016,6 +1026,18 @@ const CoachDrills = () => {
               <Label htmlFor="drill-coach-role">Coach Role</Label>
               <Input id="drill-coach-role" value={form.coach_role} onChange={(e) => setForm((p) => ({ ...p, coach_role: e.target.value }))} />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+            <div>
+              <Label htmlFor="whiteboard-template-switch">Show Whiteboard Template</Label>
+              <p className="text-xs text-muted-foreground">Toggle the default court background on or off for this drill.</p>
+            </div>
+            <Switch
+              id="whiteboard-template-switch"
+              checked={form.show_whiteboard_template}
+              onCheckedChange={(checked) => setForm((p) => ({ ...p, show_whiteboard_template: checked }))}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
