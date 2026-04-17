@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -17,47 +17,17 @@ interface DrillWhiteboardModalProps {
 
 const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 540;
+const TEMPLATE_IMAGE_SRC = "/whiteboard/volleyball-court-template.svg";
+const MARKER_RADIUS = 16;
 
-const drawCourtTemplate = (ctx: CanvasRenderingContext2D) => {
-  const w = CANVAS_WIDTH;
-  const h = CANVAS_HEIGHT;
+interface Marker {
+  id: string;
+  x: number;
+  y: number;
+  color: string;
+}
 
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#f8fafc";
-  ctx.fillRect(0, 0, w, h);
-
-  const marginX = 70;
-  const marginY = 48;
-  const courtW = w - marginX * 2;
-  const courtH = h - marginY * 2;
-
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(marginX, marginY, courtW, courtH);
-
-  const netX = marginX + courtW / 2;
-  ctx.beginPath();
-  ctx.moveTo(netX, marginY);
-  ctx.lineTo(netX, marginY + courtH);
-  ctx.stroke();
-
-  const attackOffset = courtW / 6;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(netX - attackOffset, marginY);
-  ctx.lineTo(netX - attackOffset, marginY + courtH);
-  ctx.moveTo(netX + attackOffset, marginY);
-  ctx.lineTo(netX + attackOffset, marginY + courtH);
-  ctx.stroke();
-
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "bold 16px sans-serif";
-  ctx.fillText("VOLLEYBALL WHITEBOARD", marginX, 28);
-  ctx.font = "12px sans-serif";
-  ctx.fillStyle = "#334155";
-  ctx.fillText("Left Side", marginX + 10, marginY + 18);
-  ctx.fillText("Right Side", netX + 10, marginY + 18);
-};
+const MARKER_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#111827", "#ec4899"];
 
 const getPoint = (event: DrawingEvent, canvas: HTMLCanvasElement) => {
   const rect = canvas.getBoundingClientRect();
@@ -85,6 +55,14 @@ const getPoint = (event: DrawingEvent, canvas: HTMLCanvasElement) => {
   };
 };
 
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    image.src = src;
+  });
+
 const isCanvasEmpty = (canvas: HTMLCanvasElement) => {
   const ctx = canvas.getContext("2d");
   if (!ctx) return true;
@@ -104,25 +82,24 @@ const DrillWhiteboardModal = ({
   onShowTemplateChange,
   onSave,
 }: DrillWhiteboardModalProps) => {
-  const templateCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isEraser, setIsEraser] = useState(false);
   const [strokeColor, setStrokeColor] = useState("#ef4444");
+  const [markers, setMarkers] = useState<Marker[]>([]);
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    const templateCanvas = templateCanvasRef.current;
-    if (!templateCanvas) return;
-
-    const ctx = templateCanvas.getContext("2d");
-    if (!ctx) return;
-
-    drawCourtTemplate(ctx);
-  }, [open]);
+  const markerColorById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const marker of markers) map[marker.id] = marker.color;
+    return map;
+  }, [markers]);
 
   useEffect(() => {
     if (!open) return;
+
+    setMarkers([]);
 
     const drawCanvas = drawCanvasRef.current;
     if (!drawCanvas) return;
@@ -140,6 +117,54 @@ const DrillWhiteboardModal = ({
     };
     img.src = initialDrawing;
   }, [open, initialDrawing]);
+
+  useEffect(() => {
+    if (!draggingMarkerId) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const point = toCanvasCoords(event.clientX, event.clientY);
+      if (!point) return;
+
+      setMarkers((prev) => prev.map((marker) => (marker.id === draggingMarkerId ? { ...marker, ...point } : marker)));
+    };
+
+    const onPointerUp = () => {
+      setDraggingMarkerId(null);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [draggingMarkerId]);
+
+  const toCanvasCoords = (clientX: number, clientY: number) => {
+    const board = boardRef.current;
+    if (!board) return null;
+
+    const rect = board.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * CANVAS_WIDTH;
+    const y = ((clientY - rect.top) / rect.height) * CANVAS_HEIGHT;
+    return {
+      x: Math.max(MARKER_RADIUS, Math.min(CANVAS_WIDTH - MARKER_RADIUS, x)),
+      y: Math.max(MARKER_RADIUS, Math.min(CANVAS_HEIGHT - MARKER_RADIUS, y)),
+    };
+  };
+
+  const addMarker = (color: string, x = CANVAS_WIDTH / 2, y = CANVAS_HEIGHT / 2) => {
+    setMarkers((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        x,
+        y,
+        color,
+      },
+    ]);
+  };
 
   const drawSegment = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const drawCanvas = drawCanvasRef.current;
@@ -196,18 +221,63 @@ const DrillWhiteboardModal = ({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    setMarkers([]);
   };
 
-  const saveDrawing = () => {
+  const handlePaletteDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const color = event.dataTransfer.getData("text/plain");
+    if (!color) return;
+
+    const point = toCanvasCoords(event.clientX, event.clientY);
+    if (!point) return;
+    addMarker(color, point.x, point.y);
+  };
+
+  const startMarkerDrag = (markerId: string) => {
+    setDraggingMarkerId(markerId);
+  };
+
+  const saveDrawing = async () => {
     const drawCanvas = drawCanvasRef.current;
     if (!drawCanvas) return;
 
-    if (isCanvasEmpty(drawCanvas)) {
+    if (isCanvasEmpty(drawCanvas) && markers.length === 0) {
       onSave("");
       return;
     }
 
-    onSave(drawCanvas.toDataURL("image/png"));
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = CANVAS_WIDTH;
+    exportCanvas.height = CANVAS_HEIGHT;
+    const exportCtx = exportCanvas.getContext("2d");
+    if (!exportCtx) return;
+
+    exportCtx.fillStyle = "#ffffff";
+    exportCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    if (showTemplate) {
+      try {
+        const templateImage = await loadImage(TEMPLATE_IMAGE_SRC);
+        exportCtx.drawImage(templateImage, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      } catch {
+        // If template image fails to load, proceed with drawing layer and markers.
+      }
+    }
+
+    exportCtx.drawImage(drawCanvas, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    for (const marker of markers) {
+      exportCtx.beginPath();
+      exportCtx.arc(marker.x, marker.y, MARKER_RADIUS, 0, Math.PI * 2);
+      exportCtx.fillStyle = marker.color;
+      exportCtx.fill();
+      exportCtx.lineWidth = 2;
+      exportCtx.strokeStyle = "#111827";
+      exportCtx.stroke();
+    }
+
+    onSave(exportCanvas.toDataURL("image/png"));
   };
 
   return (
@@ -234,6 +304,21 @@ const DrillWhiteboardModal = ({
           <Button type="button" variant="outline" size="sm" onClick={clearDrawing}>
             Clear
           </Button>
+          <div className="flex items-center gap-2 border-l pl-2">
+            <span className="text-xs text-muted-foreground">Pick/Drop circles:</span>
+            {MARKER_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                draggable
+                onDragStart={(event) => event.dataTransfer.setData("text/plain", color)}
+                onClick={() => addMarker(color)}
+                aria-label={`Add ${color} marker`}
+                className="h-6 w-6 rounded-full border border-slate-400"
+                style={{ backgroundColor: color }}
+              />
+            ))}
+          </div>
           <div className="ml-auto flex items-center gap-2">
             <Label htmlFor="modal-template-switch" className="text-xs sm:text-sm">Show Template</Label>
             <Switch
@@ -244,12 +329,18 @@ const DrillWhiteboardModal = ({
           </div>
         </div>
 
-        <div className="relative w-full overflow-hidden rounded-md border bg-white" style={{ aspectRatio: "16 / 9" }}>
-          <canvas
-            ref={templateCanvasRef}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            className={`absolute inset-0 h-full w-full ${showTemplate ? "block" : "hidden"}`}
+        <div
+          ref={boardRef}
+          className="relative w-full overflow-hidden rounded-md border bg-white"
+          style={{ aspectRatio: "16 / 9" }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={handlePaletteDrop}
+        >
+          <img
+            src={TEMPLATE_IMAGE_SRC}
+            alt="Volleyball court template"
+            className={`absolute inset-0 h-full w-full object-contain ${showTemplate ? "block" : "hidden"}`}
+            draggable={false}
           />
           <canvas
             ref={drawCanvasRef}
@@ -264,6 +355,23 @@ const DrillWhiteboardModal = ({
             onTouchMove={moveDrawing}
             onTouchEnd={endDrawing}
           />
+          <div className="pointer-events-none absolute inset-0">
+            {markers.map((marker) => (
+              <div
+                key={marker.id}
+                onPointerDown={() => startMarkerDrag(marker.id)}
+                className="pointer-events-auto absolute cursor-grab rounded-full border-2 border-slate-900"
+                style={{
+                  left: `${(marker.x / CANVAS_WIDTH) * 100}%`,
+                  top: `${(marker.y / CANVAS_HEIGHT) * 100}%`,
+                  width: `${(MARKER_RADIUS * 2 * 100) / CANVAS_WIDTH}%`,
+                  height: `${(MARKER_RADIUS * 2 * 100) / CANVAS_HEIGHT}%`,
+                  transform: "translate(-50%, -50%)",
+                  backgroundColor: markerColorById[marker.id],
+                }}
+              />
+            ))}
+          </div>
         </div>
 
         <DialogFooter>
