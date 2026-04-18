@@ -13,5 +13,8 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    // Some browsers/devtools sessions can deadlock Navigator LockManager and block all auth reads.
+    // Using a local non-blocking lock prevents "lock:... timed out waiting 10000ms" errors.
+    lock: async (_name, _timeout, fn) => await fn(),
   }
 });
