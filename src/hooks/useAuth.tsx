@@ -120,6 +120,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (isMountedRef.current) setIsPlayer((data?.length ?? 0) > 0);
   };
 
+  const syncEmailMatchedRoles = async (userId: string, email?: string | null) => {
+    if (!email) return;
+
+    const [playersRes, permissionsRes, adminRoleRes, leagueRoleRes, profileRes] = await Promise.all([
+      (supabase as any).rpc("get_players_by_email_normalized", { p_email: email }),
+      supabase.from<any>("user_permissions").select("permission").eq("user_id", userId),
+      supabase.rpc("has_role", { _user_id: userId, _role: "admin" } as any),
+      supabase.rpc("has_role", { _user_id: userId, _role: "league_director" } as any),
+      supabase.from<any>("profiles").select("roles").eq("user_id", userId).maybeSingle(),
+    ]);
+
+    const existingRoles: string[] = Array.isArray(profileRes.data?.roles) ? profileRes.data.roles : [];
+    const nextRoles = new Set(existingRoles);
+
+    const isPlayerByEmail = !playersRes.error && (playersRes.data?.length ?? 0) > 0;
+    if (isPlayerByEmail) nextRoles.add("Player");
+
+    const permissionList: string[] = permissionsRes.data?.map((row: any) => row.permission as string) ?? [];
+    const hasCoachAccess =
+      permissionList.includes("manage_coaches") ||
+      !!adminRoleRes.data ||
+      !!leagueRoleRes.data;
+    if (hasCoachAccess) nextRoles.add("Coach");
+
+    const nextRoleArray = Array.from(nextRoles);
+    const changed =
+      nextRoleArray.length !== existingRoles.length ||
+      nextRoleArray.some((role) => !existingRoles.includes(role));
+
+    if (!changed) return;
+
+    await supabase
+      .from("profiles")
+      .upsert({ user_id: userId, roles: nextRoleArray } as any, { onConflict: "user_id" });
+  };
+
   useEffect(() => {
     isMountedRef.current = true;
     let lastSessionId: string | null = null;
@@ -132,6 +168,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         withTimeout(checkUserPermissions(userId, email), 6000),
       ]);
       await checkPlayerRole(email);
+      await syncEmailMatchedRoles(userId, email);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -194,6 +231,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user_id: data.user.id,
         display_name: displayName,
       });
+      await syncEmailMatchedRoles(data.user.id, email);
     }
     return { error: error as Error | null };
   };
