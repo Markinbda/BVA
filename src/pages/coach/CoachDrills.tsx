@@ -141,6 +141,7 @@ const CoachDrills = () => {
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   const [viewVideoUrl, setViewVideoUrl] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const dictationBaseRef = useRef<string>("");
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
@@ -572,18 +573,22 @@ const CoachDrills = () => {
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
+    dictationBaseRef.current = form[field] ?? "";
     recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        transcript += event.results[i][0].transcript;
+      let finalText = "";
+      let interimText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalText += event.results[i][0].transcript;
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
       }
-      if (!transcript.trim()) return;
-
-      setForm((prev) => {
-        const current = prev[field] ?? "";
-        const spacer = current.trim().length > 0 ? " " : "";
-        return { ...prev, [field]: `${current}${spacer}${transcript.trim()}` };
-      });
+      const base = dictationBaseRef.current;
+      const spacer = base.trim().length > 0 ? " " : "";
+      const appended = (finalText + interimText).trim();
+      if (!appended) return;
+      setForm((prev) => ({ ...prev, [field]: `${base}${spacer}${appended}` }));
     };
     recognition.onerror = () => {
       setIsListeningField(null);
