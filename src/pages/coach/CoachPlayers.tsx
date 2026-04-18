@@ -60,6 +60,29 @@ interface Team {
   name: string;
 }
 
+interface PlayerPastHistory {
+  id: string;
+  player_id: string;
+  coach_id: string;
+  team_name: string;
+  team_members: string[];
+  event_name: string;
+  event_date: string | null;
+  event_location: string | null;
+  placement: number | null;
+  result_notes: string | null;
+}
+
+const emptyHistoryForm = {
+  team_name: "",
+  team_members_text: "",
+  event_name: "",
+  event_date: "",
+  event_location: "",
+  placement: "",
+  result_notes: "",
+};
+
 const CoachPlayers = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -72,6 +95,113 @@ const CoachPlayers = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [historyRows, setHistoryRows] = useState<PlayerPastHistory[]>([]);
+  const [historySaving, setHistorySaving] = useState(false);
+  const [historyEditingId, setHistoryEditingId] = useState<string | null>(null);
+  const [historyForm, setHistoryForm] = useState(emptyHistoryForm);
+
+  const formatPlacement = (placement: number | null) => {
+    if (!placement) return "";
+    if (placement === 1) return "1st";
+    if (placement === 2) return "2nd";
+    if (placement === 3) return "3rd";
+    return `${placement}th`;
+  };
+
+  const medalForPlacement = (placement: number | null) => {
+    if (placement === 1) return "🥇";
+    if (placement === 2) return "🥈";
+    if (placement === 3) return "🥉";
+    return null;
+  };
+
+  const loadHistory = async (playerId: string) => {
+    const { data, error } = await (supabase as any)
+      .from("player_past_history")
+      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, placement, result_notes")
+      .eq("player_id", playerId)
+      .order("event_date", { ascending: false });
+    if (error) {
+      toast({ title: "Failed to load player history", description: error.message, variant: "destructive" });
+      return;
+    }
+    setHistoryRows((data ?? []).map((row: any) => ({
+      ...row,
+      team_members: Array.isArray(row.team_members) ? row.team_members : [],
+    })));
+  };
+
+  const resetHistoryForm = () => {
+    setHistoryEditingId(null);
+    setHistoryForm(emptyHistoryForm);
+  };
+
+  const openEditHistory = (row: PlayerPastHistory) => {
+    setHistoryEditingId(row.id);
+    setHistoryForm({
+      team_name: row.team_name,
+      team_members_text: row.team_members.join(", "),
+      event_name: row.event_name,
+      event_date: row.event_date ?? "",
+      event_location: row.event_location ?? "",
+      placement: row.placement ? String(row.placement) : "",
+      result_notes: row.result_notes ?? "",
+    });
+  };
+
+  const saveHistory = async () => {
+    if (!user || !editingId) return;
+    if (!historyForm.team_name.trim() || !historyForm.event_name.trim()) {
+      toast({ title: "Team name and event name are required", variant: "destructive" });
+      return;
+    }
+
+    const teamMembers = historyForm.team_members_text
+      .split(",")
+      .map((member) => member.trim())
+      .filter(Boolean);
+
+    const payload = {
+      player_id: editingId,
+      coach_id: user.id,
+      team_name: historyForm.team_name.trim(),
+      team_members: teamMembers,
+      event_name: historyForm.event_name.trim(),
+      event_date: historyForm.event_date || null,
+      event_location: historyForm.event_location.trim() || null,
+      placement: historyForm.placement ? Number(historyForm.placement) : null,
+      result_notes: historyForm.result_notes.trim() || null,
+    };
+
+    setHistorySaving(true);
+    let error;
+    if (historyEditingId) {
+      ({ error } = await (supabase as any).from("player_past_history").update(payload).eq("id", historyEditingId));
+    } else {
+      ({ error } = await (supabase as any).from("player_past_history").insert(payload));
+    }
+    setHistorySaving(false);
+
+    if (error) {
+      toast({ title: "Failed to save player history", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    toast({ title: historyEditingId ? "History updated" : "History added" });
+    resetHistoryForm();
+    loadHistory(editingId);
+  };
+
+  const deleteHistory = async (row: PlayerPastHistory) => {
+    if (!confirm(`Delete past event \"${row.event_name}\"?`)) return;
+    const { error } = await (supabase as any).from("player_past_history").delete().eq("id", row.id);
+    if (error) {
+      toast({ title: "Failed to delete history", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "History deleted" });
+    if (editingId) loadHistory(editingId);
+  };
 
   const fetchPlayers = async () => {
     if (!user || !isMountedRef.current) return;
@@ -108,12 +238,16 @@ const CoachPlayers = () => {
   const openAdd = () => {
     setEditingId(null);
     setForm(emptyForm());
+    setHistoryRows([]);
+    resetHistoryForm();
     setDialogOpen(true);
   };
 
   const openEdit = (player: Player) => {
     setEditingId(player.id);
     setForm({ ...player });
+    resetHistoryForm();
+    loadHistory(player.id);
     setDialogOpen(true);
   };
 
@@ -152,6 +286,8 @@ const CoachPlayers = () => {
     } else {
       toast({ title: editingId ? "Player updated" : "Player added" });
       setDialogOpen(false);
+      setHistoryRows([]);
+      resetHistoryForm();
       fetchPlayers();
     }
     setSaving(false);
@@ -328,10 +464,145 @@ const CoachPlayers = () => {
               <Label>Notes</Label>
               <Textarea rows={3} value={form.notes ?? ""} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
             </div>
+
+            {editingId ? (
+              <div className="space-y-3 sm:col-span-2 rounded-md border p-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <p className="font-medium text-foreground">Past Teams, Events, and Placement Results</p>
+                    <p className="text-xs text-muted-foreground">Add career history for this player profile.</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={resetHistoryForm}>
+                    Add New Entry
+                  </Button>
+                </div>
+
+                {historyRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No past entries yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {historyRows.map((row) => {
+                      const medal = medalForPlacement(row.placement);
+                      return (
+                        <div key={row.id} className="rounded-md border bg-muted/20 p-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="font-medium text-sm">
+                                {medal ? `${medal} ` : ""}
+                                {row.event_name}
+                                {row.placement ? ` (${formatPlacement(row.placement)})` : ""}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Team: {row.team_name}
+                                {row.event_date ? ` · ${row.event_date}` : ""}
+                                {row.event_location ? ` · ${row.event_location}` : ""}
+                              </p>
+                              {row.team_members.length > 0 ? (
+                                <p className="text-xs text-muted-foreground">Team Members: {row.team_members.join(", ")}</p>
+                              ) : null}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button type="button" size="icon" variant="ghost" onClick={() => openEditHistory(row)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => deleteHistory(row)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border p-3">
+                  <div className="space-y-1">
+                    <Label>Past Team Name *</Label>
+                    <Input
+                      value={historyForm.team_name}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, team_name: e.target.value }))}
+                      placeholder="e.g. U16 National Squad"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Event Name *</Label>
+                    <Input
+                      value={historyForm.event_name}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, event_name: e.target.value }))}
+                      placeholder="e.g. Caribbean Invitational"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Event Date</Label>
+                    <Input
+                      type="date"
+                      value={historyForm.event_date}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, event_date: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Event Location</Label>
+                    <Input
+                      value={historyForm.event_location}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, event_location: e.target.value }))}
+                      placeholder="City, Venue"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Placement</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={historyForm.placement}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, placement: e.target.value }))}
+                      placeholder="1, 2, 3..."
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label>Team Members (comma-separated)</Label>
+                    <Input
+                      value={historyForm.team_members_text}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, team_members_text: e.target.value }))}
+                      placeholder="Jane Doe, Mary Smith"
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label>Result Notes</Label>
+                    <Textarea
+                      rows={2}
+                      value={historyForm.result_notes}
+                      onChange={(e) => setHistoryForm((h) => ({ ...h, result_notes: e.target.value }))}
+                      placeholder="e.g. Won bronze in a 12-team bracket"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 flex gap-2 justify-end">
+                    <Button type="button" variant="outline" onClick={resetHistoryForm}>Reset</Button>
+                    <Button type="button" onClick={saveHistory} disabled={historySaving}>
+                      {historySaving ? "Saving..." : historyEditingId ? "Update Entry" : "Add Entry"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="sm:col-span-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                Save the player first to add past teams, team members, and event results.
+              </div>
+            )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => {
+              setDialogOpen(false);
+              setHistoryRows([]);
+              resetHistoryForm();
+            }}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : editingId ? "Save Changes" : "Add Player"}
             </Button>

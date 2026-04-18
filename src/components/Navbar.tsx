@@ -232,7 +232,7 @@ const Navbar = () => {
                       className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-accent/20 hover:text-accent transition-colors"
                     >
                       <Video className="h-4 w-4" />
-                      Player Portal
+                      Video Footage
                     </Link>
                   )}
                   <Link
@@ -321,6 +321,13 @@ const Navbar = () => {
               <li>
                 <Link to="/admin" className="block rounded-md px-4 py-3 font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors">
                   Admin Panel
+                </Link>
+              </li>
+            )}
+            {user && isPlayer && (
+              <li>
+                <Link to="/player" className="block rounded-md px-4 py-3 font-sans text-sm font-medium text-primary-foreground/80 hover:bg-accent/20 transition-colors">
+                  Video Footage
                 </Link>
               </li>
             )}

@@ -66,6 +66,26 @@ interface Season {
   family_member_id: string | null;
 }
 
+interface LinkedPlayerRecord {
+  id: string;
+  first_name: string;
+  last_name: string;
+  team: string | null;
+  volleyball_position: string | null;
+}
+
+interface PlayerPastHistory {
+  id: string;
+  player_id: string;
+  team_name: string;
+  team_members: string[];
+  event_name: string;
+  event_date: string | null;
+  event_location: string | null;
+  placement: number | null;
+  result_notes: string | null;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const ROLES = ["Parent / Guardian", "Player", "Coach", "Volunteer / Helper"];
@@ -115,6 +135,8 @@ const ProfileDashboard = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [family, setFamily] = useState<FamilyMember[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [linkedPlayers, setLinkedPlayers] = useState<LinkedPlayerRecord[]>([]);
+  const [pastHistory, setPastHistory] = useState<PlayerPastHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
   // UI state
@@ -140,7 +162,7 @@ const ProfileDashboard = () => {
 
   const loadAll = async () => {
     setLoading(true);
-    await Promise.all([loadProfile(), loadFamily(), loadSeasons()]);
+    await Promise.all([loadProfile(), loadFamily(), loadSeasons(), loadLinkedPlayerData()]);
     setLoading(false);
   };
 
@@ -173,6 +195,47 @@ const ProfileDashboard = () => {
       ...s,
       roster: s.roster ?? [],
       match_results: s.match_results ?? [],
+    })));
+  };
+
+  const loadLinkedPlayerData = async () => {
+    if (!user?.email) return;
+    const normalizedEmail = user.email.trim().toLowerCase();
+
+    const { data: playersData, error: playersError } = await (supabase as any)
+      .from("coach_players")
+      .select("id, first_name, last_name, team, volleyball_position")
+      .ilike("email", normalizedEmail)
+      .order("last_name");
+
+    if (playersError) {
+      toast({ title: "Failed to load linked player profile", description: playersError.message, variant: "destructive" });
+      return;
+    }
+
+    const players: LinkedPlayerRecord[] = playersData ?? [];
+    setLinkedPlayers(players);
+
+    const playerIds = players.map((player) => player.id);
+    if (playerIds.length === 0) {
+      setPastHistory([]);
+      return;
+    }
+
+    const { data: historyData, error: historyError } = await (supabase as any)
+      .from("player_past_history")
+      .select("id, player_id, team_name, team_members, event_name, event_date, event_location, placement, result_notes")
+      .in("player_id", playerIds)
+      .order("event_date", { ascending: false });
+
+    if (historyError) {
+      toast({ title: "Failed to load player history", description: historyError.message, variant: "destructive" });
+      return;
+    }
+
+    setPastHistory((historyData ?? []).map((item: any) => ({
+      ...item,
+      team_members: Array.isArray(item.team_members) ? item.team_members : [],
     })));
   };
 
@@ -318,6 +381,19 @@ const ProfileDashboard = () => {
     (acc[s.year] = acc[s.year] || []).push(s);
     return acc;
   }, {});
+
+  const historyByPlayer = pastHistory.reduce<Record<string, PlayerPastHistory[]>>((acc, row) => {
+    (acc[row.player_id] = acc[row.player_id] || []).push(row);
+    return acc;
+  }, {});
+
+  const totalGolds =
+    seasons.filter((s) => s.placement === 1).length +
+    pastHistory.filter((h) => h.placement === 1).length;
+
+  const totalPodiums =
+    seasons.filter((s) => s.placement && s.placement <= 3).length +
+    pastHistory.filter((h) => h.placement && h.placement <= 3).length;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -515,8 +591,41 @@ const ProfileDashboard = () => {
                 <CardContent className="grid grid-cols-2 gap-4">
                   <StatBox label="Seasons Played" value={seasons.length} />
                   <StatBox label="Family Members" value={family.length} />
-                  <StatBox label="Gold Medals" value={seasons.filter((s) => s.placement === 1).length} emoji="🥇" />
-                  <StatBox label="Podium Finishes" value={seasons.filter((s) => s.placement && s.placement <= 3).length} emoji="🏆" />
+                  <StatBox label="Gold Medals" value={totalGolds} emoji="🥇" />
+                  <StatBox label="Podium Finishes" value={totalPodiums} emoji="🏆" />
+                </CardContent>
+              </Card>
+
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base font-semibold uppercase tracking-wide">
+                    <Users className="h-4 w-4 text-accent" /> Linked Player Team Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {linkedPlayers.length === 0 ? (
+                    <p className="text-muted-foreground">
+                      No player roster is currently linked to your account email.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {linkedPlayers.map((player) => (
+                        <div key={player.id} className="rounded-md border p-3">
+                          <p className="font-medium text-foreground">{player.first_name} {player.last_name}</p>
+                          <p className="text-muted-foreground">
+                            Team: {player.team || "Not assigned"}
+                            {player.volleyball_position ? ` · Position: ${player.volleyball_position}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="pt-1">
+                    <Button size="sm" onClick={() => navigate("/player")} className="gap-2">
+                      <ClipboardList className="h-4 w-4" /> View Video Footage
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -717,6 +826,69 @@ const ProfileDashboard = () => {
                       </Accordion>
                     </div>
                   ))}
+
+                {linkedPlayers.length > 0 && (
+                  <div>
+                    <div className="mb-3 flex items-center gap-3">
+                      <h3 className="font-heading text-lg font-bold text-primary">Coach-Recorded Past Events</h3>
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-sm text-muted-foreground">{pastHistory.length} entries</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {pastHistory.length === 0 && (
+                        <Card className="border-dashed">
+                          <CardContent className="py-6 text-sm text-muted-foreground">
+                            No past team or event history has been added by your coach yet.
+                          </CardContent>
+                        </Card>
+                      )}
+                      {linkedPlayers.map((player) => {
+                        const rows = historyByPlayer[player.id] ?? [];
+                        if (rows.length === 0) return null;
+                        return (
+                          <Card key={player.id}>
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base">
+                                {player.first_name} {player.last_name}
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                              {rows.map((row) => (
+                                <div key={row.id} className="rounded-md border p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="font-medium text-foreground flex items-center gap-2">
+                                        <Medal placement={row.placement} />
+                                        {row.event_name}
+                                      </p>
+                                      <p className="text-sm text-muted-foreground">
+                                        Team: {row.team_name}
+                                        {row.event_date ? ` · ${new Date(row.event_date).toLocaleDateString()}` : ""}
+                                        {row.event_location ? ` · ${row.event_location}` : ""}
+                                      </p>
+                                      {row.team_members.length > 0 ? (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Team Members: {row.team_members.join(", ")}
+                                        </p>
+                                      ) : null}
+                                      {row.result_notes ? (
+                                        <p className="text-xs italic text-muted-foreground mt-1">"{row.result_notes}"</p>
+                                      ) : null}
+                                    </div>
+                                    {row.placement ? (
+                                      <Badge variant="outline">{placementLabel(row.placement)}</Badge>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>

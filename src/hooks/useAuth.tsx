@@ -54,6 +54,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const isMountedRef = useRef(true);
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+    ]);
+  };
+
   const applyOwnerFallback = (email?: string | null) => {
     if (!isOwnerFallbackEmail(email) || !isMountedRef.current) return;
     setIsAdmin(true);
@@ -104,10 +111,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const checkPlayerRole = async (email?: string | null) => {
     if (!email) { if (isMountedRef.current) setIsPlayer(false); return; }
+    const normalizedEmail = email.trim().toLowerCase();
     const { count } = await (supabase as any)
       .from("coach_players")
       .select("id", { count: "exact", head: true })
-      .eq("email", email);
+      .ilike("email", normalizedEmail);
     if (isMountedRef.current) setIsPlayer((count ?? 0) > 0);
   };
 
@@ -116,11 +124,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let lastSessionId: string | null = null;
 
     const runPermissionChecks = async (userId: string, email: string | undefined) => {
-      await Promise.all([
-        checkAdminRole(userId, email),
-        checkLeagueDirectorRole(userId),
-        checkUserPermissions(userId, email),
-        checkPlayerRole(email),
+      await Promise.allSettled([
+        withTimeout(checkAdminRole(userId, email), 6000),
+        withTimeout(checkLeagueDirectorRole(userId), 6000),
+        withTimeout(checkUserPermissions(userId, email), 6000),
+        withTimeout(checkPlayerRole(email), 6000),
       ]);
     };
 
@@ -140,7 +148,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (session?.user && sessionChanged) {
           await runPermissionChecks(session.user.id, session.user.email);
         }
-        
+
         if (isMountedRef.current) setLoading(false);
       }
     );
@@ -152,7 +160,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         applyOwnerFallback(session?.user?.email);
-        // Don't re-run checks here; let the listener handle initial state
+        if (session?.user) {
+          await runPermissionChecks(session.user.id, session.user.email);
+        }
       } finally {
         if (isMountedRef.current) setLoading(false);
       }
