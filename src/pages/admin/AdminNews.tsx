@@ -29,7 +29,12 @@ const AdminNews = () => {
   const { toast } = useToast();
 
   const fetchArticles = async () => {
-    const { data } = await supabase.from("news_articles").select("*").order("date", { ascending: false });
+    const { data, error } = await supabase.from("news_articles").select("*").order("date", { ascending: false });
+    if (error) {
+      toast({ title: "Failed to load news", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     setArticles((data as any) ?? []);
     setLoading(false);
   };

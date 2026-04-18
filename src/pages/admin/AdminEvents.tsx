@@ -72,19 +72,31 @@ const AdminEvents = () => {
   const queryClient = useQueryClient();
 
   const fetchEvents = async () => {
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from("events")
       .select("*, event_categories(name, color), event_locations(name, city)")
       .order("date", { ascending: false });
+    if (error) {
+      toast({ title: "Failed to load events", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     setEvents((data as any) ?? []);
     setLoading(false);
   };
 
   const fetchLookups = async () => {
-    const [{ data: cats }, { data: locs }] = await Promise.all([
+    const [{ data: cats, error: catsError }, { data: locs, error: locsError }] = await Promise.all([
       (supabase as any).from("event_categories").select("id, name, color").order("name"),
       (supabase as any).from("event_locations").select("id, name, city").order("name"),
     ]);
+    if (catsError || locsError) {
+      toast({
+        title: "Failed to load event lookups",
+        description: catsError?.message ?? locsError?.message,
+        variant: "destructive",
+      });
+    }
     setCategories(cats ?? []);
     setLocationOptions(locs ?? []);
   };

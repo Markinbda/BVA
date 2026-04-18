@@ -45,7 +45,12 @@ const AdminEventLocations = () => {
   const { user } = useAuth();
 
   const fetchLocations = async () => {
-    const { data } = await (supabase as any).from("event_locations").select("*").order("name");
+    const { data, error } = await (supabase as any).from("event_locations").select("*").order("name");
+    if (error) {
+      toast({ title: "Failed to load locations", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     setLocations(data ?? []);
     setLoading(false);
   };

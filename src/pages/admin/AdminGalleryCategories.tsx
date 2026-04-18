@@ -23,10 +23,15 @@ const AdminGalleryCategories = () => {
   const { toast } = useToast();
 
   const fetch = async () => {
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from("gallery_categories")
       .select("*")
       .order("sort_order", { ascending: true });
+    if (error) {
+      toast({ title: "Failed to load gallery categories", description: error.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
     setCategories(data ?? []);
     setLoading(false);
   };
