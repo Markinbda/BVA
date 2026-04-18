@@ -111,12 +111,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const checkPlayerRole = async (email?: string | null) => {
     if (!email) { if (isMountedRef.current) setIsPlayer(false); return; }
-    const normalizedEmail = email.trim().toLowerCase();
-    const { count } = await (supabase as any)
-      .from("coach_players")
-      .select("id", { count: "exact", head: true })
-      .ilike("email", normalizedEmail);
-    if (isMountedRef.current) setIsPlayer((count ?? 0) > 0);
+    const { data, error } = await (supabase as any)
+      .rpc("get_players_by_email_normalized", { p_email: email });
+    if (error) {
+      if (isMountedRef.current) setIsPlayer(false);
+      return;
+    }
+    if (isMountedRef.current) setIsPlayer((data?.length ?? 0) > 0);
   };
 
   useEffect(() => {
@@ -124,12 +125,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let lastSessionId: string | null = null;
 
     const runPermissionChecks = async (userId: string, email: string | undefined) => {
+      // Keep role/permission checks timeout-bound, but always run player lookup to avoid false negatives.
       await Promise.allSettled([
         withTimeout(checkAdminRole(userId, email), 6000),
         withTimeout(checkLeagueDirectorRole(userId), 6000),
         withTimeout(checkUserPermissions(userId, email), 6000),
-        withTimeout(checkPlayerRole(email), 6000),
       ]);
+      await checkPlayerRole(email);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

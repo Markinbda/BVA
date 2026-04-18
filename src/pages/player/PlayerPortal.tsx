@@ -112,13 +112,9 @@ const PlayerPortal = () => {
   const fetchPortal = useCallback(async () => {
     if (!user?.email || !isMountedRef.current) return;
     setLoading(true);
-    const normalizedEmail = user.email.trim().toLowerCase();
 
     const [playersRes, notesRes, sharesRes] = await Promise.all([
-      (supabase as any)
-        .from("coach_players")
-        .select("id, first_name, last_name, team, team_id")
-        .ilike("email", normalizedEmail),
+      (supabase as any).rpc("get_players_by_email_normalized", { p_email: user.email }),
       (supabase as any)
         .from("video_notes")
         .select("id, video_id, timestamp_seconds, note_type, note_text, voice_url, is_all_players, player_id, created_at, coach_videos(id, title, video_uid, video_provider)")

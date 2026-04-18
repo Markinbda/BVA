@@ -201,20 +201,17 @@ const ProfileDashboard = () => {
 
   const loadLinkedPlayerData = async () => {
     if (!user?.email) return;
-    const normalizedEmail = user.email.trim().toLowerCase();
-
     const { data: playersData, error: playersError } = await (supabase as any)
-      .from("coach_players")
-      .select("id, first_name, last_name, team, volleyball_position")
-      .ilike("email", normalizedEmail)
-      .order("last_name");
+      .rpc("get_players_by_email_normalized", { p_email: user.email });
 
     if (playersError) {
       toast({ title: "Failed to load linked player profile", description: playersError.message, variant: "destructive" });
       return;
     }
 
-    const players: LinkedPlayerRecord[] = playersData ?? [];
+    const players: LinkedPlayerRecord[] = (playersData ?? []).sort((a: LinkedPlayerRecord, b: LinkedPlayerRecord) =>
+      `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
+    );
     setLinkedPlayers(players);
 
     const playerIds = players.map((player) => player.id);
