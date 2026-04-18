@@ -68,6 +68,7 @@ interface PlayerPastHistory {
   team_name: string;
   team_members: string[];
   event_name: string;
+  event_format: "Indoor" | "Beach" | null;
   event_date: string | null;
   event_location: string | null;
   event_image_urls: string[];
@@ -79,6 +80,7 @@ interface HistoryForm {
   team_name: string;
   team_members_text: string;
   event_name: string;
+  event_format: "Indoor" | "Beach" | "";
   event_date: string;
   event_location: string;
   event_image_urls: string[];
@@ -90,6 +92,7 @@ const emptyHistoryForm: HistoryForm = {
   team_name: "",
   team_members_text: "",
   event_name: "",
+  event_format: "",
   event_date: "",
   event_location: "",
   event_image_urls: ["", "", "", ""],
@@ -132,7 +135,7 @@ const CoachPlayers = () => {
   const loadHistory = async (playerId: string) => {
     const { data, error } = await (supabase as any)
       .from("player_past_history")
-      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
+      .select("id, player_id, coach_id, team_name, team_members, event_name, event_format, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
       .eq("player_id", playerId)
       .order("event_date", { ascending: false });
     if (error) {
@@ -162,6 +165,7 @@ const CoachPlayers = () => {
       team_name: row.team_name,
       team_members_text: row.team_members.join(", "),
       event_name: row.event_name,
+      event_format: row.event_format ?? "",
       event_date: row.event_date ?? "",
       event_location: row.event_location ?? "",
       event_image_urls: imageSlots,
@@ -192,6 +196,7 @@ const CoachPlayers = () => {
       team_name: historyForm.team_name.trim(),
       team_members: teamMembers,
       event_name: historyForm.event_name.trim(),
+      event_format: historyForm.event_format || null,
       event_date: historyForm.event_date || null,
       event_location: historyForm.event_location.trim() || null,
       event_image_urls: eventImageUrls,
@@ -521,6 +526,7 @@ const CoachPlayers = () => {
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 Team: {row.team_name}
+                                {row.event_format ? ` · ${row.event_format}` : ""}
                                 {row.event_date ? ` · ${row.event_date}` : ""}
                                 {row.event_location ? ` · ${row.event_location}` : ""}
                               </p>
@@ -585,6 +591,23 @@ const CoachPlayers = () => {
                       value={historyForm.event_date}
                       onChange={(e) => setHistoryForm((h) => ({ ...h, event_date: e.target.value }))}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Event Type</Label>
+                    <Select
+                      value={historyForm.event_format || "none"}
+                      onValueChange={(v) => setHistoryForm((h) => ({
+                        ...h,
+                        event_format: v === "none" ? "" : (v as "Indoor" | "Beach"),
+                      }))}
+                    >
+                      <SelectTrigger><SelectValue placeholder="Select event type" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not set</SelectItem>
+                        <SelectItem value="Indoor">Indoor</SelectItem>
+                        <SelectItem value="Beach">Beach</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label>Event Location</Label>

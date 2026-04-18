@@ -80,6 +80,7 @@ interface PlayerPastHistory {
   team_name: string;
   team_members: string[];
   event_name: string;
+  event_format: "Indoor" | "Beach" | null;
   event_date: string | null;
   event_location: string | null;
   event_image_urls: string[];
@@ -222,7 +223,7 @@ const ProfileDashboard = () => {
 
     const { data: historyData, error: historyError } = await (supabase as any)
       .from("player_past_history")
-      .select("id, player_id, team_name, team_members, event_name, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
+      .select("id, player_id, team_name, team_members, event_name, event_format, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
       .in("player_id", playerIds)
       .order("event_date", { ascending: false });
 
@@ -865,6 +866,7 @@ const ProfileDashboard = () => {
                                       </p>
                                       <p className="text-sm text-muted-foreground">
                                         Team: {row.team_name}
+                                        {row.event_format ? ` · ${row.event_format}` : ""}
                                         {row.event_date ? ` · ${new Date(row.event_date).toLocaleDateString()}` : ""}
                                         {row.event_location ? ` · ${row.event_location}` : ""}
                                       </p>
