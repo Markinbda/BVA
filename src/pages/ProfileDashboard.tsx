@@ -82,7 +82,7 @@ interface PlayerPastHistory {
   event_name: string;
   event_date: string | null;
   event_location: string | null;
-  event_image_url: string | null;
+  event_image_urls: string[];
   placement: number | null;
   result_notes: string | null;
 }
@@ -225,7 +225,7 @@ const ProfileDashboard = () => {
 
     const { data: historyData, error: historyError } = await (supabase as any)
       .from("player_past_history")
-      .select("id, player_id, team_name, team_members, event_name, event_date, event_location, event_image_url, placement, result_notes")
+      .select("id, player_id, team_name, team_members, event_name, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
       .in("player_id", playerIds)
       .order("event_date", { ascending: false });
 
@@ -237,6 +237,9 @@ const ProfileDashboard = () => {
     setPastHistory((historyData ?? []).map((item: any) => ({
       ...item,
       team_members: Array.isArray(item.team_members) ? item.team_members : [],
+      event_image_urls: Array.isArray(item.event_image_urls)
+        ? item.event_image_urls.slice(0, 4).filter((url: string) => typeof url === "string" && url.trim().length > 0)
+        : (item.event_image_url ? [item.event_image_url] : []),
     })));
   };
 
@@ -868,12 +871,17 @@ const ProfileDashboard = () => {
                                         {row.event_date ? ` · ${new Date(row.event_date).toLocaleDateString()}` : ""}
                                         {row.event_location ? ` · ${row.event_location}` : ""}
                                       </p>
-                                      {row.event_image_url ? (
-                                        <img
-                                          src={row.event_image_url}
-                                          alt={row.event_name}
-                                          className="mt-2 h-24 w-40 rounded-md border object-cover"
-                                        />
+                                      {row.event_image_urls.length > 0 ? (
+                                        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                          {row.event_image_urls.map((imageUrl, index) => (
+                                            <img
+                                              key={`${row.id}-image-${index}`}
+                                              src={imageUrl}
+                                              alt={`${row.event_name} ${index + 1}`}
+                                              className="h-24 w-full rounded-md border object-cover"
+                                            />
+                                          ))}
+                                        </div>
                                       ) : null}
                                       {row.team_members.length > 0 ? (
                                         <p className="text-xs text-muted-foreground mt-1">

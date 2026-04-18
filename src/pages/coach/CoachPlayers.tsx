@@ -70,18 +70,29 @@ interface PlayerPastHistory {
   event_name: string;
   event_date: string | null;
   event_location: string | null;
-  event_image_url: string | null;
+  event_image_urls: string[];
   placement: number | null;
   result_notes: string | null;
 }
 
-const emptyHistoryForm = {
+interface HistoryForm {
+  team_name: string;
+  team_members_text: string;
+  event_name: string;
+  event_date: string;
+  event_location: string;
+  event_image_urls: string[];
+  placement: string;
+  result_notes: string;
+}
+
+const emptyHistoryForm: HistoryForm = {
   team_name: "",
   team_members_text: "",
   event_name: "",
   event_date: "",
   event_location: "",
-  event_image_url: "",
+  event_image_urls: ["", "", "", ""],
   placement: "",
   result_notes: "",
 };
@@ -121,7 +132,7 @@ const CoachPlayers = () => {
   const loadHistory = async (playerId: string) => {
     const { data, error } = await (supabase as any)
       .from("player_past_history")
-      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, event_image_url, placement, result_notes")
+      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, event_image_urls, event_image_url, placement, result_notes")
       .eq("player_id", playerId)
       .order("event_date", { ascending: false });
     if (error) {
@@ -131,6 +142,9 @@ const CoachPlayers = () => {
     setHistoryRows((data ?? []).map((row: any) => ({
       ...row,
       team_members: Array.isArray(row.team_members) ? row.team_members : [],
+      event_image_urls: Array.isArray(row.event_image_urls)
+        ? row.event_image_urls.slice(0, 4).filter((url: string) => typeof url === "string" && url.trim().length > 0)
+        : (row.event_image_url ? [row.event_image_url] : []),
     })));
   };
 
@@ -140,6 +154,9 @@ const CoachPlayers = () => {
   };
 
   const openEditHistory = (row: PlayerPastHistory) => {
+    const imageSlots = [...row.event_image_urls.slice(0, 4)];
+    while (imageSlots.length < 4) imageSlots.push("");
+
     setHistoryEditingId(row.id);
     setHistoryForm({
       team_name: row.team_name,
@@ -147,7 +164,7 @@ const CoachPlayers = () => {
       event_name: row.event_name,
       event_date: row.event_date ?? "",
       event_location: row.event_location ?? "",
-      event_image_url: row.event_image_url ?? "",
+      event_image_urls: imageSlots,
       placement: row.placement ? String(row.placement) : "",
       result_notes: row.result_notes ?? "",
     });
@@ -164,6 +181,10 @@ const CoachPlayers = () => {
       .split(",")
       .map((member) => member.trim())
       .filter(Boolean);
+    const eventImageUrls = historyForm.event_image_urls
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .slice(0, 4);
 
     const payload = {
       player_id: editingId,
@@ -173,7 +194,8 @@ const CoachPlayers = () => {
       event_name: historyForm.event_name.trim(),
       event_date: historyForm.event_date || null,
       event_location: historyForm.event_location.trim() || null,
-      event_image_url: historyForm.event_image_url.trim() || null,
+      event_image_urls: eventImageUrls,
+      event_image_url: eventImageUrls[0] ?? null,
       placement: historyForm.placement ? Number(historyForm.placement) : null,
       result_notes: historyForm.result_notes.trim() || null,
     };
@@ -502,12 +524,17 @@ const CoachPlayers = () => {
                                 {row.event_date ? ` · ${row.event_date}` : ""}
                                 {row.event_location ? ` · ${row.event_location}` : ""}
                               </p>
-                              {row.event_image_url ? (
-                                <img
-                                  src={row.event_image_url}
-                                  alt={row.event_name}
-                                  className="mt-2 h-20 w-32 rounded-md border object-cover"
-                                />
+                              {row.event_image_urls.length > 0 ? (
+                                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                  {row.event_image_urls.map((imageUrl, index) => (
+                                    <img
+                                      key={`${row.id}-image-${index}`}
+                                      src={imageUrl}
+                                      alt={`${row.event_name} ${index + 1}`}
+                                      className="h-20 w-full rounded-md border object-cover"
+                                    />
+                                  ))}
+                                </div>
                               ) : null}
                               {row.team_members.length > 0 ? (
                                 <p className="text-xs text-muted-foreground">Team Members: {row.team_members.join(", ")}</p>
@@ -594,14 +621,25 @@ const CoachPlayers = () => {
                       placeholder="e.g. Won bronze in a 12-team bracket"
                     />
                   </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label>Event Image</Label>
-                    <ImageUpload
-                      value={historyForm.event_image_url}
-                      onChange={(url) => setHistoryForm((h) => ({ ...h, event_image_url: url }))}
-                      folder="player-history"
-                      aspectClass="h-40"
-                    />
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>Event Images (up to 4)</Label>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {historyForm.event_image_urls.map((imageUrl, index) => (
+                        <div key={`history-image-slot-${index}`} className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Image {index + 1}</Label>
+                          <ImageUpload
+                            value={imageUrl}
+                            onChange={(url) => setHistoryForm((h) => {
+                              const next = [...h.event_image_urls];
+                              next[index] = url;
+                              return { ...h, event_image_urls: next };
+                            })}
+                            folder="player-history"
+                            aspectClass="h-40"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="sm:col-span-2 flex gap-2 justify-end">
                     <Button type="button" variant="outline" onClick={resetHistoryForm}>Reset</Button>
