@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import ImageUpload from "@/components/admin/ImageUpload";
 import {
   Select,
   SelectContent,
@@ -69,6 +70,7 @@ interface PlayerPastHistory {
   event_name: string;
   event_date: string | null;
   event_location: string | null;
+  event_image_url: string | null;
   placement: number | null;
   result_notes: string | null;
 }
@@ -79,6 +81,7 @@ const emptyHistoryForm = {
   event_name: "",
   event_date: "",
   event_location: "",
+  event_image_url: "",
   placement: "",
   result_notes: "",
 };
@@ -118,7 +121,7 @@ const CoachPlayers = () => {
   const loadHistory = async (playerId: string) => {
     const { data, error } = await (supabase as any)
       .from("player_past_history")
-      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, placement, result_notes")
+      .select("id, player_id, coach_id, team_name, team_members, event_name, event_date, event_location, event_image_url, placement, result_notes")
       .eq("player_id", playerId)
       .order("event_date", { ascending: false });
     if (error) {
@@ -144,6 +147,7 @@ const CoachPlayers = () => {
       event_name: row.event_name,
       event_date: row.event_date ?? "",
       event_location: row.event_location ?? "",
+      event_image_url: row.event_image_url ?? "",
       placement: row.placement ? String(row.placement) : "",
       result_notes: row.result_notes ?? "",
     });
@@ -169,6 +173,7 @@ const CoachPlayers = () => {
       event_name: historyForm.event_name.trim(),
       event_date: historyForm.event_date || null,
       event_location: historyForm.event_location.trim() || null,
+      event_image_url: historyForm.event_image_url.trim() || null,
       placement: historyForm.placement ? Number(historyForm.placement) : null,
       result_notes: historyForm.result_notes.trim() || null,
     };
@@ -497,6 +502,13 @@ const CoachPlayers = () => {
                                 {row.event_date ? ` · ${row.event_date}` : ""}
                                 {row.event_location ? ` · ${row.event_location}` : ""}
                               </p>
+                              {row.event_image_url ? (
+                                <img
+                                  src={row.event_image_url}
+                                  alt={row.event_name}
+                                  className="mt-2 h-20 w-32 rounded-md border object-cover"
+                                />
+                              ) : null}
                               {row.team_members.length > 0 ? (
                                 <p className="text-xs text-muted-foreground">Team Members: {row.team_members.join(", ")}</p>
                               ) : null}
@@ -580,6 +592,15 @@ const CoachPlayers = () => {
                       value={historyForm.result_notes}
                       onChange={(e) => setHistoryForm((h) => ({ ...h, result_notes: e.target.value }))}
                       placeholder="e.g. Won bronze in a 12-team bracket"
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <Label>Event Image</Label>
+                    <ImageUpload
+                      value={historyForm.event_image_url}
+                      onChange={(url) => setHistoryForm((h) => ({ ...h, event_image_url: url }))}
+                      folder="player-history"
+                      aspectClass="h-40"
                     />
                   </div>
                   <div className="sm:col-span-2 flex gap-2 justify-end">
