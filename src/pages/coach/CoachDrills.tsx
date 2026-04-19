@@ -141,8 +141,12 @@ const CoachDrills = () => {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordedVideoUrl, setRecordedVideoUrl] = useState<string | null>(null);
   const [viewVideoUrl, setViewVideoUrl] = useState<string | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<{ deviceId: string; label: string }[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>("");
+  const [showCameraSelection, setShowCameraSelection] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const dictationBaseRef = useRef<string>("");
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const videoRecorderRef = useRef<MediaRecorder | null>(null);
   const videoChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
@@ -632,8 +636,16 @@ const CoachDrills = () => {
 
     if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
     if (recordingStopTimerRef.current) window.clearTimeout(recordingStopTimerRef.current);
+    
+    // Stop all tracks
     recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
     recordingStreamRef.current = null;
+    
+    // Clear preview
+    if (videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = null;
+    }
+    
     setIsRecordingVideo(false);
 
     const blob = new Blob(videoChunksRef.current, { type: "video/webm" });
@@ -663,14 +675,66 @@ const CoachDrills = () => {
     toast({ title: "Drill video attached" });
   };
 
+  const loadAvailableCameras = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices
+        .filter((device) => device.kind === "videoinput")
+        .map((device) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${devices.filter((d) => d.kind === "videoinput").indexOf(device) + 1}`,
+        }));
+      setAvailableCameras(cameras);
+      if (cameras.length > 0 && !selectedCameraId) {
+        setSelectedCameraId(cameras[0].deviceId);
+      }
+      return cameras;
+    } catch (error) {
+      toast({ title: "Failed to load cameras", variant: "destructive" });
+      return [];
+    }
+  };
+
   const startVideoRecording = async () => {
     if (!user || isRecordingVideo) return;
 
+    // Load cameras if not already loaded
+    let cameras = availableCameras;
+    if (cameras.length === 0) {
+      cameras = await loadAvailableCameras();
+    }
+
+    // Show camera selection if multiple cameras available
+    if (cameras.length > 1) {
+      setShowCameraSelection(true);
+      return;
+    }
+
+    // Proceed with recording
+    await proceedWithVideoRecording();
+  };
+
+  const proceedWithVideoRecording = async () => {
+    if (!user) return;
+
     alert("2 minutes maximum recording length. Camera and microphone access will be requested.");
+    setShowCameraSelection(false);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const constraints: MediaStreamConstraints = {
+        video: selectedCameraId
+          ? { deviceId: { exact: selectedCameraId } }
+          : true,
+        audio: true,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       recordingStreamRef.current = stream;
+
+      // Attach stream to preview video element
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+      }
 
       const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
       videoChunksRef.current = [];
@@ -1048,11 +1112,26 @@ const CoachDrills = () => {
               )}
             </div>
             <p className="text-xs text-muted-foreground">A popup reminder appears before recording starts. Maximum recording length is 2 minutes.</p>
+            {isRecordingVideo && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">Live Preview:</p>
+                <video
+                  ref={videoPreviewRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full max-h-56 rounded-md border bg-black"
+                />
+              </div>
+            )}
             {form.drill_video_path && (
               <p className="text-xs text-muted-foreground break-all">Saved video path: {form.drill_video_path}</p>
             )}
-            {recordedVideoUrl && (
-              <video src={recordedVideoUrl} controls className="w-full max-h-56 rounded-md border" />
+            {recordedVideoUrl && !isRecordingVideo && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">Recorded Video:</p>
+                <video src={recordedVideoUrl} controls className="w-full max-h-56 rounded-md border" />
+              </div>
             )}
           </div>
 
@@ -1149,6 +1228,37 @@ const CoachDrills = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save Drill"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCameraSelection} onOpenChange={setShowCameraSelection}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select Camera</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Choose which camera to use for recording:</p>
+            <div className="space-y-2">
+              {availableCameras.map((camera) => (
+                <button
+                  key={camera.deviceId}
+                  type="button"
+                  onClick={() => setSelectedCameraId(camera.deviceId)}
+                  className={`w-full text-left p-3 rounded-md border transition-colors ${
+                    selectedCameraId === camera.deviceId
+                      ? "bg-primary border-primary text-primary-foreground"
+                      : "bg-background border-input hover:border-primary"
+                  }`}
+                >
+                  {camera.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCameraSelection(false)}>Cancel</Button>
+            <Button onClick={proceedWithVideoRecording}>Record with Selected Camera</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
