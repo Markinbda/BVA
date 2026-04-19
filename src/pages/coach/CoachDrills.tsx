@@ -35,6 +35,7 @@ interface SpeechRecognitionLike {
   onresult: ((event: any) => void) | null;
   onerror: ((event: any) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
   start: () => void;
   stop: () => void;
 }
@@ -574,14 +575,20 @@ const CoachDrills = () => {
     recognition.continuous = true;
     recognition.interimResults = true;
     dictationBaseRef.current = form[field] ?? "";
+    
+    recognition.onstart = () => {
+      // Recognition has started successfully
+    };
+    
     recognition.onresult = (event: any) => {
       let finalText = "";
       let interimText = "";
-      for (let i = 0; i < event.results.length; i++) {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += event.results[i][0].transcript;
+          finalText += transcript;
         } else {
-          interimText += event.results[i][0].transcript;
+          interimText += transcript;
         }
       }
       const base = dictationBaseRef.current;
@@ -590,10 +597,21 @@ const CoachDrills = () => {
       if (!appended) return;
       setForm((prev) => ({ ...prev, [field]: `${base}${spacer}${appended}` }));
     };
-    recognition.onerror = () => {
+    
+    recognition.onerror = (event: any) => {
       setIsListeningField(null);
-      toast({ title: "Voice-to-text stopped", variant: "destructive" });
+      const errorMessages: Record<string, string> = {
+        "no-speech": "No speech detected. Please try again.",
+        "audio-capture": "No microphone found. Please check your device.",
+        "network": "Network error. Please check your connection.",
+        "not-allowed": "Microphone permission denied. Please allow access in your browser.",
+        "bad-grammar": "Speech recognition error. Please try again.",
+        "service-not-allowed": "Speech recognition service not available.",
+      };
+      const errorMsg = errorMessages[event.error] || `Error: ${event.error}`;
+      toast({ title: "Voice-to-text error", description: errorMsg, variant: "destructive" });
     };
+    
     recognition.onend = () => {
       setIsListeningField(null);
     };
