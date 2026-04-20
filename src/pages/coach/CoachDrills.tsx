@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Search, Pencil, Trash2, Timer, ExternalLink, Eye, Copy, Mic, Square, Video } from "lucide-react";
 
 interface SpeechRecognitionLike {
@@ -111,6 +112,7 @@ const emptyForm: DrillForm = {
 const CoachDrills = () => {
   const { user, hasPermission } = useAuth();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -219,6 +221,22 @@ const CoachDrills = () => {
   useEffect(() => {
     loadData();
   }, [user]);
+
+  useEffect(() => {
+    const drillId = searchParams.get("drillId");
+    if (!drillId || loading || drills.length === 0) return;
+
+    const targetDrill = drills.find((drill) => drill.id === drillId);
+    if (targetDrill) {
+      setViewingDrill(targetDrill);
+      setViewVideoUrl(null);
+      setViewDialogOpen(true);
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("drillId");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams, drills, loading]);
 
   useEffect(() => {
     const loadEditVideo = async () => {
