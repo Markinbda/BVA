@@ -12,7 +12,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Upload, FileText, Trash2, ExternalLink, Users, User } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, Upload, FileText, Trash2, ExternalLink, Users, User, Pencil, Layers, Download, FolderOpen } from "lucide-react";
 
 interface CoachDocument {
   id: string;
@@ -26,6 +27,15 @@ interface CoachDocument {
   share_with_all_coaches: boolean;
   uploaded_at: string;
   uploader_name?: string;
+}
+
+interface DocumentSet {
+  id: string;
+  coach_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  documents: CoachDocument[];
 }
 
 const MAX_DOC_SIZE = 25 * 1024 * 1024;
@@ -56,6 +66,7 @@ const CoachDocuments = () => {
   const { toast } = useToast();
 
   const [documents, setDocuments] = useState<CoachDocument[]>([]);
+  const [documentSets, setDocumentSets] = useState<DocumentSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"mine" | "shared">("mine");
@@ -72,18 +83,54 @@ const CoachDocuments = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingDocument, setEditingDocument] = useState<CoachDocument | null>(null);
+  const [editFileName, setEditFileName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editShareWithPlayers, setEditShareWithPlayers] = useState(false);
+  const [editShareWithAllCoaches, setEditShareWithAllCoaches] = useState(false);
+  const [editSelectedFile, setEditSelectedFile] = useState<File | null>(null);
+  const [editDraggingFile, setEditDraggingFile] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const editFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [setDialogOpen, setSetDialogOpen] = useState(false);
+  const [setName, setSetName] = useState("");
+  const [setDescription, setSetDescription] = useState("");
+  const [setSelectedIds, setSetSelectedIds] = useState<Set<string>>(new Set());
+  const [setSaving, setSetSaving] = useState(false);
+  const [reviewSet, setReviewSet] = useState<DocumentSet | null>(null);
+
   const canManageAllDocuments = isAdmin || hasPermission("manage_coach_documents");
+
+  const resetSetForm = () => {
+    setSetName("");
+    setSetDescription("");
+    setSetSelectedIds(new Set());
+  };
+
+  const resetEditForm = () => {
+    setEditingDocument(null);
+    setEditFileName("");
+    setEditDescription("");
+    setEditShareWithPlayers(false);
+    setEditShareWithAllCoaches(false);
+    setEditSelectedFile(null);
+    setEditDraggingFile(false);
+  };
 
   const loadDocuments = async () => {
     if (!user) return;
     setLoading(true);
 
-    const [docsRes, profilesRes] = await Promise.all([
+    const [docsRes, profilesRes, setsRes, setItemsRes] = await Promise.all([
       (supabase as any)
         .from("coach_documents")
         .select("*")
         .order("uploaded_at", { ascending: false }),
       (supabase as any).from("profiles").select("user_id, display_name"),
+      (supabase as any).from("coach_document_sets").select("*").order("created_at", { ascending: false }),
+      (supabase as any).from("coach_document_set_items").select("set_id, document_id"),
     ]);
 
     if (docsRes.error) {
@@ -96,6 +143,15 @@ const CoachDocuments = () => {
       return;
     }
 
+    const setsMissing = setsRes.error && String(setsRes.error.message ?? "").toLowerCase().includes("coach_document_sets");
+    const setItemsMissing = setItemsRes.error && String(setItemsRes.error.message ?? "").toLowerCase().includes("coach_document_set_items");
+    if (setsRes.error && !setsMissing) {
+      toast({ title: "Could not load document sets", description: setsRes.error.message, variant: "destructive" });
+    }
+    if (setItemsRes.error && !setItemsMissing) {
+      toast({ title: "Could not load document set items", description: setItemsRes.error.message, variant: "destructive" });
+    }
+
     const uploaderNames: Record<string, string> = {};
     for (const profile of profilesRes.data ?? []) {
       uploaderNames[profile.user_id] = profile.display_name ?? "Coach";
@@ -106,7 +162,22 @@ const CoachDocuments = () => {
       uploader_name: uploaderNames[row.coach_id] ?? "Coach",
     }));
 
+    const docById = new Map(rows.map((doc) => [doc.id, doc]));
+    const itemsBySet = new Map<string, string[]>();
+    for (const item of (setItemsRes.data ?? []) as Array<{ set_id: string; document_id: string }>) {
+      const current = itemsBySet.get(item.set_id) ?? [];
+      current.push(item.document_id);
+      itemsBySet.set(item.set_id, current);
+    }
+    const sets: DocumentSet[] = ((setsRes.data ?? []) as Array<any>).map((setRow) => ({
+      ...setRow,
+      documents: (itemsBySet.get(setRow.id) ?? [])
+        .map((docId) => docById.get(docId))
+        .filter((doc): doc is CoachDocument => !!doc),
+    }));
+
     setDocuments(rows);
+    setDocumentSets(sets);
     setLoading(false);
   };
 
@@ -140,6 +211,20 @@ const CoachDocuments = () => {
       );
     });
   }, [documents, query, user?.id]);
+
+  const filteredSets = useMemo(() => {
+    const term = query;
+    return documentSets.filter((set) => {
+      const canViewSet = canManageAllDocuments || set.coach_id === user?.id;
+      if (!canViewSet) return false;
+      if (!term) return true;
+      return (
+        set.name.toLowerCase().includes(term) ||
+        (set.description ?? "").toLowerCase().includes(term) ||
+        set.documents.some((doc) => doc.file_name.toLowerCase().includes(term))
+      );
+    });
+  }, [documentSets, query, canManageAllDocuments, user?.id]);
 
   const resetUploadForm = () => {
     setSelectedFile(null);
@@ -175,6 +260,26 @@ const CoachDocuments = () => {
     setIsDraggingFile(false);
     const file = e.dataTransfer.files?.[0] ?? null;
     handleFileChange(file);
+  };
+
+  const openEditFilePicker = () => {
+    editFileInputRef.current?.click();
+  };
+
+  const handleEditDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setEditDraggingFile(true);
+  };
+
+  const handleEditDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setEditDraggingFile(false);
+  };
+
+  const handleEditDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setEditDraggingFile(false);
+    setEditSelectedFile(e.dataTransfer.files?.[0] ?? null);
   };
 
   const handleUpload = async () => {
@@ -236,20 +341,184 @@ const CoachDocuments = () => {
     loadDocuments();
   };
 
-  const handleOpen = async (doc: CoachDocument) => {
-    setOpeningId(doc.id);
-    const { data, error } = await supabase.storage
-      .from("coach-documents")
-      .createSignedUrl(doc.file_path, 60 * 5);
+  const handleOpenEdit = (doc: CoachDocument) => {
+    setEditingDocument(doc);
+    setEditFileName(doc.file_name);
+    setEditDescription(doc.description ?? "");
+    setEditShareWithPlayers(doc.share_with_players);
+    setEditShareWithAllCoaches(doc.share_with_all_coaches);
+    setEditSelectedFile(null);
+    setEditDraggingFile(false);
+    setEditDialogOpen(true);
+  };
 
-    if (error || !data?.signedUrl) {
-      toast({ title: "Unable to open file", description: error?.message, variant: "destructive" });
-      setOpeningId(null);
+  const handleSaveEdit = async () => {
+    if (!user || !editingDocument) return;
+    if (!editFileName.trim()) {
+      toast({ title: "File name is required", variant: "destructive" });
       return;
     }
 
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-    setOpeningId(null);
+    if (editSelectedFile && editSelectedFile.size > MAX_DOC_SIZE) {
+      toast({ title: "File too large", description: "Maximum upload size is 25MB.", variant: "destructive" });
+      return;
+    }
+
+    setSavingEdit(true);
+    let nextPath = editingDocument.file_path;
+    let uploadedNewPath: string | null = null;
+
+    try {
+      if (editSelectedFile) {
+        const storagePath = `${user.id}/${Date.now()}-${sanitizeFileName(editSelectedFile.name)}`;
+        const { error: uploadError } = await supabase.storage
+          .from("coach-documents")
+          .upload(storagePath, editSelectedFile, { upsert: false });
+        if (uploadError) {
+          throw new Error(uploadError.message);
+        }
+        nextPath = storagePath;
+        uploadedNewPath = storagePath;
+      }
+
+      const updatePayload: Record<string, any> = {
+        file_name: editFileName.trim(),
+        description: editDescription.trim() || null,
+        share_with_players: editShareWithPlayers,
+        share_with_all_coaches: editShareWithAllCoaches,
+        file_path: nextPath,
+      };
+
+      if (editSelectedFile) {
+        updatePayload.file_size = editSelectedFile.size;
+        updatePayload.mime_type = editSelectedFile.type || null;
+      }
+
+      const { error: updateError } = await (supabase as any)
+        .from("coach_documents")
+        .update(updatePayload)
+        .eq("id", editingDocument.id);
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      if (editSelectedFile) {
+        await supabase.storage.from("coach-documents").remove([editingDocument.file_path]);
+      }
+
+      toast({ title: "Document updated" });
+      setEditDialogOpen(false);
+      resetEditForm();
+      loadDocuments();
+    } catch (error: any) {
+      if (uploadedNewPath) {
+        await supabase.storage.from("coach-documents").remove([uploadedNewPath]);
+      }
+      toast({ title: "Update failed", description: String(error?.message ?? error), variant: "destructive" });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const getSignedUrl = async (doc: CoachDocument) => {
+    const { data, error } = await supabase.storage
+      .from("coach-documents")
+      .createSignedUrl(doc.file_path, 60 * 5);
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? "Could not generate signed URL");
+    }
+    return data.signedUrl;
+  };
+
+  const handleDownload = async (doc: CoachDocument) => {
+    try {
+      const signedUrl = await getSignedUrl(doc);
+      const anchor = document.createElement("a");
+      anchor.href = signedUrl;
+      anchor.download = doc.file_name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch (error: any) {
+      toast({ title: "Unable to download file", description: String(error?.message ?? error), variant: "destructive" });
+    }
+  };
+
+  const handleOpenSet = async (set: DocumentSet) => {
+    for (const doc of set.documents) {
+      await handleOpen(doc);
+    }
+  };
+
+  const handleDownloadSet = async (set: DocumentSet) => {
+    for (const doc of set.documents) {
+      await handleDownload(doc);
+    }
+  };
+
+  const toggleSetDocument = (docId: string, checked: boolean) => {
+    setSetSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(docId);
+      else next.delete(docId);
+      return next;
+    });
+  };
+
+  const createDocumentSet = async () => {
+    if (!user) return;
+    if (!setName.trim()) {
+      toast({ title: "Set name is required", variant: "destructive" });
+      return;
+    }
+    if (setSelectedIds.size < 2) {
+      toast({ title: "Select at least 2 documents", variant: "destructive" });
+      return;
+    }
+
+    setSetSaving(true);
+    try {
+      const { data: setRow, error: setError } = await (supabase as any)
+        .from("coach_document_sets")
+        .insert({
+          coach_id: user.id,
+          name: setName.trim(),
+          description: setDescription.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (setError) throw new Error(setError.message);
+
+      const items = Array.from(setSelectedIds).map((documentId) => ({
+        set_id: setRow.id,
+        document_id: documentId,
+      }));
+      const { error: itemsError } = await (supabase as any)
+        .from("coach_document_set_items")
+        .insert(items);
+      if (itemsError) throw new Error(itemsError.message);
+
+      toast({ title: "Document set created" });
+      setSetDialogOpen(false);
+      resetSetForm();
+      loadDocuments();
+    } catch (error: any) {
+      toast({ title: "Unable to create set", description: String(error?.message ?? error), variant: "destructive" });
+    } finally {
+      setSetSaving(false);
+    }
+  };
+
+  const handleOpen = async (doc: CoachDocument) => {
+    setOpeningId(doc.id);
+    try {
+      const signedUrl = await getSignedUrl(doc);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error: any) {
+      toast({ title: "Unable to open file", description: String(error?.message ?? error), variant: "destructive" });
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   const handleDelete = async (doc: CoachDocument) => {
@@ -351,6 +620,24 @@ const CoachDocuments = () => {
                       <ExternalLink className="h-4 w-4" />
                       {openingId === doc.id ? "Opening..." : "Open"}
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDownload(doc)}
+                    >
+                      <Download className="h-4 w-4" />
+                      Download
+                    </Button>
+                    {canDelete && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleOpenEdit(doc)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button
                         size="sm"
@@ -389,13 +676,14 @@ const CoachDocuments = () => {
               Open the upload modal to add documents with sharing options.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button
-              onClick={() => setUploadDialogOpen(true)}
-              disabled={uploading}
-            >
+          <CardContent className="flex flex-wrap gap-2">
+            <Button onClick={() => setUploadDialogOpen(true)} disabled={uploading}>
               <Upload className="h-4 w-4" />
               Upload Document
+            </Button>
+            <Button variant="outline" onClick={() => setSetDialogOpen(true)}>
+              <Layers className="h-4 w-4" />
+              Document Set
             </Button>
           </CardContent>
         </Card>
@@ -516,6 +804,46 @@ const CoachDocuments = () => {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle>Document Sets</CardTitle>
+            <CardDescription>Bundle multiple documents for grouped review, opening, and downloading.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {filteredSets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No document sets found.</p>
+            ) : (
+              filteredSets.map((set) => (
+                <div key={set.id} className="rounded-md border border-border p-3">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="font-semibold text-foreground">{set.name}</p>
+                      {set.description && <p className="text-sm text-muted-foreground">{set.description}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {set.documents.length} documents • Created {formatDate(set.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setReviewSet(set)}>
+                        <FolderOpen className="h-4 w-4" />
+                        Review
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleOpenSet(set)}>
+                        <ExternalLink className="h-4 w-4" />
+                        Open Set
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleDownloadSet(set)}>
+                        <Download className="h-4 w-4" />
+                        Download Set
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "mine" | "shared")}>
           <TabsList>
             <TabsTrigger value="mine">My Documents ({filteredMine.length})</TabsTrigger>
@@ -531,6 +859,185 @@ const CoachDocuments = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open && !savingEdit) resetEditForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Document</DialogTitle>
+            <DialogDescription>Change title, description, sharing options, or replace the file.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Replace file (optional)</Label>
+              <div
+                onDragOver={handleEditDragOver}
+                onDragLeave={handleEditDragLeave}
+                onDrop={handleEditDrop}
+                onClick={openEditFilePicker}
+                className={`cursor-pointer rounded-md border-2 border-dashed p-4 text-center transition-colors ${
+                  editDraggingFile ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <p className="text-sm text-muted-foreground">Drag and drop a replacement file here, or click to choose one</p>
+                {editSelectedFile && (
+                  <p className="mt-2 text-sm font-medium text-foreground">
+                    Replacement: {editSelectedFile.name} ({formatBytes(editSelectedFile.size)})
+                  </p>
+                )}
+              </div>
+              <input
+                ref={editFileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => setEditSelectedFile(e.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-file-name">Title</Label>
+              <Input
+                id="edit-file-name"
+                value={editFileName}
+                onChange={(e) => setEditFileName(e.target.value)}
+                placeholder="Enter a display name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Short description (optional)</Label>
+              <Textarea
+                id="edit-description"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="What is this file for?"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Share with players</p>
+                  <p className="text-xs text-muted-foreground">Makes this document visible in player-facing views.</p>
+                </div>
+                <Switch checked={editShareWithPlayers} onCheckedChange={setEditShareWithPlayers} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Share with all coaches</p>
+                  <p className="text-xs text-muted-foreground">Shows this file in the shared coach documents tab.</p>
+                </div>
+                <Switch checked={editShareWithAllCoaches} onCheckedChange={setEditShareWithAllCoaches} />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={savingEdit}>Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit}>
+              <Pencil className="h-4 w-4" />
+              {savingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={setDialogOpen}
+        onOpenChange={(open) => {
+          setSetDialogOpen(open);
+          if (!open && !setSaving) resetSetForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create Document Set</DialogTitle>
+            <DialogDescription>Choose two or more documents to bundle into a reusable set.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="set-name">Set name</Label>
+              <Input id="set-name" value={setName} onChange={(e) => setSetName(e.target.value)} placeholder="Example: Team Review Pack" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="set-description">Description (optional)</Label>
+              <Textarea id="set-description" value={setDescription} onChange={(e) => setSetDescription(e.target.value)} placeholder="What is this set used for?" />
+            </div>
+            <div className="space-y-2">
+              <Label>Documents</Label>
+              <div className="max-h-64 space-y-2 overflow-auto rounded-md border border-border p-3">
+                {filteredMine.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Upload documents first to build a set.</p>
+                ) : (
+                  filteredMine.map((doc) => {
+                    const checked = setSelectedIds.has(doc.id);
+                    return (
+                      <label key={doc.id} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/50">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) => toggleSetDocument(doc.id, value === true)}
+                        />
+                        <span className="text-sm">
+                          <span className="font-medium text-foreground">{doc.file_name}</span>
+                          <span className="block text-xs text-muted-foreground">{doc.description ?? "No description"}</span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Selected: {setSelectedIds.size}</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSetDialogOpen(false)} disabled={setSaving}>Cancel</Button>
+            <Button onClick={createDocumentSet} disabled={setSaving}>
+              <Layers className="h-4 w-4" />
+              {setSaving ? "Creating..." : "Create Set"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!reviewSet} onOpenChange={(open) => !open && setReviewSet(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{reviewSet?.name ?? "Document Set"}</DialogTitle>
+            <DialogDescription>{reviewSet?.description ?? "Review documents in this set."}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 space-y-2 overflow-auto">
+            {(reviewSet?.documents ?? []).map((doc) => (
+              <div key={doc.id} className="flex items-center justify-between rounded-md border border-border p-2">
+                <div>
+                  <p className="text-sm font-medium text-foreground">{doc.file_name}</p>
+                  <p className="text-xs text-muted-foreground">{doc.description ?? "No description"}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => handleOpen(doc)}>
+                    <ExternalLink className="h-4 w-4" />
+                    Open
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleDownload(doc)}>
+                    <Download className="h-4 w-4" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewSet(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CoachLayout>
   );
 };
