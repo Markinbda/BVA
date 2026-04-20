@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Newspaper, CalendarDays, Image, FileText,
   Heart, LogOut, Menu, X, Settings, Upload, Trophy, Users, Medal, ImagePlus,
-  Tag, MapPin, ClipboardList, SlidersHorizontal, Video, UserCog, Activity
+  Tag, MapPin, ClipboardList, SlidersHorizontal, Video, UserCog, Activity, FolderOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -27,6 +27,7 @@ const navItems = [
   { path: "/admin/videos", label: "Videos", icon: Video, permission: "manage_gallery" },
   { path: "/admin/video-upload-analytics", label: "Upload Analytics", icon: Activity, permission: "manage_gallery" },
   { path: "/admin/teams", label: "Team Coaches", icon: UserCog, permission: "manage_coaches" },
+  { path: "/coach/documents", label: "Coach Documents", icon: FolderOpen, permission: "manage_coach_documents" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
 ];

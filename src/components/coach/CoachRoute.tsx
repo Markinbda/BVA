@@ -1,7 +1,12 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 
-const CoachRoute = ({ children }: { children: React.ReactNode }) => {
+interface CoachRouteProps {
+  children: React.ReactNode;
+  requiredPermissions?: string[];
+}
+
+const CoachRoute = ({ children, requiredPermissions = ["manage_coaches"] }: CoachRouteProps) => {
   const { user, isAdmin, loading, hasPermission } = useAuth();
 
   if (loading) {
@@ -16,7 +21,7 @@ const CoachRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/admin/login" replace />;
   }
 
-  const hasAccess = isAdmin || hasPermission("manage_coaches");
+  const hasAccess = isAdmin || hasPermission(requiredPermissions);
 
   if (!hasAccess) {
     return (

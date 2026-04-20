@@ -70,6 +70,11 @@ export const ADMIN_PERMISSION_OPTIONS: AdminPermissionOption[] = [
     label: "Coach portal",
     description: "Access the coach portal to manage players, teams, and email lists",
   },
+  {
+    permission: "manage_coach_documents",
+    label: "Coach documents",
+    description: "Upload, remove, and share coach repository documents across players and coaches",
+  },
 ];
 
 export const ADMIN_SECTION_PERMISSIONS = ADMIN_PERMISSION_OPTIONS.map((option) => option.permission).filter(

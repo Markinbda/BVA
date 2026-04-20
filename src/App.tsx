@@ -97,6 +97,7 @@ import CoachDrills from "./pages/coach/CoachDrills";
 import CoachPracticePlans from "./pages/coach/CoachPracticePlans";
 import CoachPracticePlanEditor from "./pages/coach/CoachPracticePlanEditor";
 import CoachPracticePlanView from "./pages/coach/CoachPracticePlanView";
+import CoachDocuments from "./pages/coach/CoachDocuments";
 
 const queryClient = new QueryClient();
 
@@ -202,6 +203,10 @@ const App = () => (
             <Route path="/coach/practice-plans" element={<CoachRoute><CoachPracticePlans /></CoachRoute>} />
             <Route path="/coach/practice-plans/:id" element={<CoachRoute><CoachPracticePlanEditor /></CoachRoute>} />
             <Route path="/coach/practice-plans/:id/view" element={<CoachRoute><CoachPracticePlanView /></CoachRoute>} />
+            <Route
+              path="/coach/documents"
+              element={<CoachRoute requiredPermissions={["manage_coaches", "manage_coach_documents"]}><CoachDocuments /></CoachRoute>}
+            />
             <Route path="/coach/email" element={<CoachRoute><CoachEmail /></CoachRoute>} />
             <Route path="/coach/email-history" element={<CoachRoute><CoachEmailHistory /></CoachRoute>} />
 

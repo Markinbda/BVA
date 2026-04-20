@@ -13,6 +13,7 @@ import {
   Radio,
   Dumbbell,
   CalendarRange,
+  FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -23,6 +24,7 @@ const BASE_NAV = [
   { path: "/coach/players", label: "Players", icon: Users },
   { path: "/coach/drills", label: "Drill Library", icon: Dumbbell },
   { path: "/coach/practice-plans", label: "Practice Plans", icon: CalendarRange },
+  { path: "/coach/documents", label: "Document Repository", icon: FolderOpen },
   { path: "/coach/videos", label: "Video Library", icon: Video },
   { path: "/coach/live", label: "Live Streaming", icon: Radio },
   { path: "/coach/email", label: "Send Email", icon: Mail },
