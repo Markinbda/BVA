@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, Upload, FileText, Trash2, ExternalLink, Users, User, Pencil, Layers, Download, FolderOpen } from "lucide-react";
+import { Search, Upload, FileText, Trash2, ExternalLink, Users, User, Pencil, Layers, Download, FolderOpen, Send } from "lucide-react";
 
 interface CoachDocument {
   id: string;
@@ -36,6 +36,14 @@ interface DocumentSet {
   description: string | null;
   created_at: string;
   documents: CoachDocument[];
+}
+
+interface CoachPlayer {
+  id: string;
+  first_name: string;
+  last_name: string;
+  team: string | null;
+  email: string | null;
 }
 
 const MAX_DOC_SIZE = 25 * 1024 * 1024;
@@ -101,7 +109,21 @@ const CoachDocuments = () => {
   const [setSaving, setSetSaving] = useState(false);
   const [reviewSet, setReviewSet] = useState<DocumentSet | null>(null);
 
+  const [players, setPlayers] = useState<CoachPlayer[]>([]);
+  const [shareSelectedDocumentIds, setShareSelectedDocumentIds] = useState<Set<string>>(new Set());
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [sendMode, setSendMode] = useState<"documents" | "set">("documents");
+  const [sendSelectedSetId, setSendSelectedSetId] = useState<string>("");
+  const [sendSelectedTeamNames, setSendSelectedTeamNames] = useState<Set<string>>(new Set());
+  const [sendSelectedPlayerIds, setSendSelectedPlayerIds] = useState<Set<string>>(new Set());
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendPlayerSearch, setSendPlayerSearch] = useState("");
+  const [sendingShares, setSendingShares] = useState(false);
+
   const canManageAllDocuments = isAdmin || hasPermission("manage_coach_documents");
+
+  const canShareDocument = (doc: CoachDocument) => canManageAllDocuments || doc.coach_id === user?.id;
+  const canShareSet = (set: DocumentSet) => canManageAllDocuments || set.coach_id === user?.id;
 
   const resetSetForm = () => {
     setSetName("");
@@ -117,6 +139,29 @@ const CoachDocuments = () => {
     setEditShareWithAllCoaches(false);
     setEditSelectedFile(null);
     setEditDraggingFile(false);
+  };
+
+  const resetSendForm = () => {
+    setSendSelectedTeamNames(new Set());
+    setSendSelectedPlayerIds(new Set());
+    setSendMessage("");
+    setSendPlayerSearch("");
+  };
+
+  const loadPlayers = async () => {
+    if (!user) return;
+    const { data, error } = await (supabase as any)
+      .from("coach_players")
+      .select("id, first_name, last_name, team, email")
+      .eq("coach_id", user.id)
+      .order("first_name", { ascending: true });
+
+    if (error) {
+      toast({ title: "Could not load players", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setPlayers((data ?? []) as CoachPlayer[]);
   };
 
   const loadDocuments = async () => {
@@ -185,6 +230,10 @@ const CoachDocuments = () => {
     loadDocuments();
   }, [user]);
 
+  useEffect(() => {
+    loadPlayers();
+  }, [user]);
+
   const query = search.trim().toLowerCase();
 
   const filteredMine = useMemo(() => {
@@ -226,6 +275,56 @@ const CoachDocuments = () => {
     });
   }, [documentSets, query, canManageAllDocuments, user?.id]);
 
+  const shareableDocuments = useMemo(
+    () => documents.filter((doc) => canShareDocument(doc)),
+    [documents, canManageAllDocuments, user?.id]
+  );
+
+  const shareableSets = useMemo(
+    () => documentSets.filter((set) => canShareSet(set)),
+    [documentSets, canManageAllDocuments, user?.id]
+  );
+
+  const teamGroups = useMemo(() => {
+    return players.reduce<Record<string, CoachPlayer[]>>((acc, player) => {
+      const teamName = player.team?.trim() || "Unassigned";
+      (acc[teamName] = acc[teamName] ?? []).push(player);
+      return acc;
+    }, {});
+  }, [players]);
+
+  const filteredPlayers = useMemo(() => {
+    const term = sendPlayerSearch.trim().toLowerCase();
+    if (!term) return players;
+    return players.filter((player) => {
+      const name = `${player.first_name} ${player.last_name}`.toLowerCase();
+      return (
+        name.includes(term) ||
+        (player.team ?? "").toLowerCase().includes(term) ||
+        (player.email ?? "").toLowerCase().includes(term)
+      );
+    });
+  }, [players, sendPlayerSearch]);
+
+  const selectedPlayers = useMemo(() => {
+    const selected = new Map<string, CoachPlayer>();
+    for (const teamName of sendSelectedTeamNames) {
+      for (const player of teamGroups[teamName] ?? []) {
+        selected.set(player.id, player);
+      }
+    }
+    for (const player of players) {
+      if (sendSelectedPlayerIds.has(player.id)) {
+        selected.set(player.id, player);
+      }
+    }
+    return Array.from(selected.values());
+  }, [players, sendSelectedPlayerIds, sendSelectedTeamNames, teamGroups]);
+
+  const selectedSendDocuments = useMemo(() => {
+    return shareableDocuments.filter((doc) => shareSelectedDocumentIds.has(doc.id));
+  }, [shareableDocuments, shareSelectedDocumentIds]);
+
   const resetUploadForm = () => {
     setSelectedFile(null);
     setFileName("");
@@ -238,6 +337,155 @@ const CoachDocuments = () => {
     setSelectedFile(file);
     if (file && !fileName.trim()) {
       setFileName(file.name);
+    }
+  };
+
+  const toggleShareDocument = (docId: string, checked: boolean) => {
+    setShareSelectedDocumentIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(docId);
+      else next.delete(docId);
+      return next;
+    });
+  };
+
+  const toggleSendTeam = (teamName: string, checked: boolean) => {
+    setSendSelectedTeamNames((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(teamName);
+      else next.delete(teamName);
+      return next;
+    });
+  };
+
+  const toggleSendPlayer = (playerId: string, checked: boolean) => {
+    setSendSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(playerId);
+      else next.delete(playerId);
+      return next;
+    });
+  };
+
+  const openSendDialogForDocuments = (documentIds?: string[]) => {
+    if (documentIds && documentIds.length > 0) {
+      setShareSelectedDocumentIds(new Set(documentIds));
+    }
+    setSendMode("documents");
+    setSendSelectedSetId("");
+    resetSendForm();
+    setSendDialogOpen(true);
+  };
+
+  const openSendDialogForSet = (setId: string) => {
+    setSendMode("set");
+    setSendSelectedSetId(setId);
+    resetSendForm();
+    setSendDialogOpen(true);
+  };
+
+  const handleSendToPlayers = async () => {
+    if (!user) return;
+
+    if (selectedPlayers.length === 0) {
+      toast({ title: "Select at least one player", variant: "destructive" });
+      return;
+    }
+
+    if (sendMode === "documents" && selectedSendDocuments.length === 0) {
+      toast({ title: "Select at least one document", variant: "destructive" });
+      return;
+    }
+
+    const selectedSet = shareableSets.find((set) => set.id === sendSelectedSetId) ?? null;
+    if (sendMode === "set" && !selectedSet) {
+      toast({ title: "Select a document set", variant: "destructive" });
+      return;
+    }
+
+    const payloadRows =
+      sendMode === "documents"
+        ? selectedPlayers.flatMap((player) =>
+            selectedSendDocuments.map((doc) => ({
+              coach_id: user.id,
+              player_id: player.id,
+              document_id: doc.id,
+              set_id: null,
+              message: sendMessage.trim() || null,
+            }))
+          )
+        : selectedPlayers.map((player) => ({
+            coach_id: user.id,
+            player_id: player.id,
+            document_id: null,
+            set_id: selectedSet!.id,
+            message: sendMessage.trim() || null,
+          }));
+
+    setSendingShares(true);
+    try {
+      const { error: insertError } = await (supabase as any)
+        .from("coach_document_player_shares")
+        .insert(payloadRows);
+      if (insertError) {
+        throw new Error(insertError.message);
+      }
+
+      const emailRecipients = selectedPlayers
+        .map((player) => player.email)
+        .filter((email): email is string => !!email && email.includes("@"));
+
+      const itemLabel =
+        sendMode === "documents"
+          ? selectedSendDocuments.map((doc) => doc.file_name)
+          : [selectedSet!.name];
+
+      if (emailRecipients.length > 0) {
+        const emailSubject =
+          sendMode === "documents"
+            ? "New document(s) shared by your coach"
+            : "New document set shared by your coach";
+        const lines = [
+          "Your coach shared new training resources with you.",
+          "",
+          "Items:",
+          ...itemLabel.map((label) => `- ${label}`),
+        ];
+        if (sendMessage.trim()) {
+          lines.push("", "Message from coach:", sendMessage.trim());
+        }
+        lines.push("", "Sign in to the Player Portal and open Document Library to review files.");
+
+        const { error: emailError } = await supabase.functions.invoke("send-coach-email", {
+          body: {
+            subject: emailSubject,
+            body: lines.join("\n"),
+            recipients: Array.from(new Set(emailRecipients)),
+          },
+        });
+
+        if (emailError) {
+          toast({
+            title: "Documents shared",
+            description: `Saved shares, but email notifications failed: ${emailError.message}`,
+          });
+        }
+      }
+
+      toast({
+        title: "Documents sent",
+        description: `Shared with ${selectedPlayers.length} player${selectedPlayers.length === 1 ? "" : "s"}.`,
+      });
+
+      if (sendMode === "documents") {
+        setShareSelectedDocumentIds(new Set());
+      }
+      setSendDialogOpen(false);
+      resetSendForm();
+    } catch (error: any) {
+      toast({ title: "Unable to send documents", description: String(error?.message ?? error), variant: "destructive" });
+    } finally {
+      setSendingShares(false);
     }
   };
 
@@ -573,11 +821,22 @@ const CoachDocuments = () => {
       <div className="space-y-3">
         {items.map((doc) => {
           const canDelete = canManageAllDocuments || doc.coach_id === user?.id;
+          const canShare = canShareDocument(doc);
+          const selectedForShare = shareSelectedDocumentIds.has(doc.id);
           return (
             <Card key={doc.id}>
               <CardContent className="py-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="space-y-2">
+                    {canShare && (
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Checkbox
+                          checked={selectedForShare}
+                          onCheckedChange={(value) => toggleShareDocument(doc.id, value === true)}
+                        />
+                        Select to send
+                      </label>
+                    )}
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-muted-foreground" />
                       <p className="font-semibold text-foreground">{doc.file_name}</p>
@@ -628,6 +887,16 @@ const CoachDocuments = () => {
                       <Download className="h-4 w-4" />
                       Download
                     </Button>
+                    {canShare && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openSendDialogForDocuments([doc.id])}
+                      >
+                        <Send className="h-4 w-4" />
+                        Send
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button
                         size="sm"
@@ -685,6 +954,14 @@ const CoachDocuments = () => {
               <Layers className="h-4 w-4" />
               Document Set
             </Button>
+              <Button
+                variant="outline"
+                onClick={() => openSendDialogForDocuments()}
+                disabled={shareSelectedDocumentIds.size === 0}
+              >
+                <Send className="h-4 w-4" />
+                Send Selected ({shareSelectedDocumentIds.size})
+              </Button>
           </CardContent>
         </Card>
 
@@ -836,6 +1113,12 @@ const CoachDocuments = () => {
                         <Download className="h-4 w-4" />
                         Download Set
                       </Button>
+                      {canShareSet(set) && (
+                        <Button size="sm" variant="outline" onClick={() => openSendDialogForSet(set.id)}>
+                          <Send className="h-4 w-4" />
+                          Send Set
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -859,6 +1142,171 @@ const CoachDocuments = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog
+        open={sendDialogOpen}
+        onOpenChange={(open) => {
+          if (sendingShares) return;
+          setSendDialogOpen(open);
+          if (!open) resetSendForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Send To Players</DialogTitle>
+            <DialogDescription>Select document(s) or a document set, then choose player recipients.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Button
+                type="button"
+                variant={sendMode === "documents" ? "default" : "outline"}
+                onClick={() => setSendMode("documents")}
+                disabled={sendingShares}
+              >
+                Send Document(s)
+              </Button>
+              <Button
+                type="button"
+                variant={sendMode === "set" ? "default" : "outline"}
+                onClick={() => setSendMode("set")}
+                disabled={sendingShares}
+              >
+                Send Document Set
+              </Button>
+            </div>
+
+            {sendMode === "documents" ? (
+              <div className="space-y-2">
+                <Label>Documents</Label>
+                <div className="max-h-52 space-y-2 overflow-auto rounded-md border border-border p-3">
+                  {shareableDocuments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No documents available to send.</p>
+                  ) : (
+                    shareableDocuments.map((doc) => {
+                      const checked = shareSelectedDocumentIds.has(doc.id);
+                      return (
+                        <label key={doc.id} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/40">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => toggleShareDocument(doc.id, value === true)}
+                          />
+                          <span className="text-sm">
+                            <span className="font-medium text-foreground">{doc.file_name}</span>
+                            <span className="block text-xs text-muted-foreground">{doc.description ?? "No description"}</span>
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">Selected: {selectedSendDocuments.length}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Document Set</Label>
+                <div className="max-h-52 space-y-2 overflow-auto rounded-md border border-border p-3">
+                  {shareableSets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No document sets available to send.</p>
+                  ) : (
+                    shareableSets.map((set) => {
+                      const checked = sendSelectedSetId === set.id;
+                      return (
+                        <label key={set.id} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/40">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(value) => setSendSelectedSetId(value === true ? set.id : "")}
+                          />
+                          <span className="text-sm">
+                            <span className="font-medium text-foreground">{set.name}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {set.documents.length} docs {set.description ? `• ${set.description}` : ""}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Teams</Label>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(teamGroups).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No players are linked to your account yet.</p>
+                ) : (
+                  Object.entries(teamGroups).map(([teamName, teamPlayers]) => {
+                    const checked = sendSelectedTeamNames.has(teamName);
+                    return (
+                      <label key={teamName} className="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+                        <Checkbox checked={checked} onCheckedChange={(value) => toggleSendTeam(teamName, value === true)} />
+                        <span>{teamName}</span>
+                        <Badge variant="secondary">{teamPlayers.length}</Badge>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="send-player-search">Players</Label>
+              <Input
+                id="send-player-search"
+                value={sendPlayerSearch}
+                onChange={(e) => setSendPlayerSearch(e.target.value)}
+                placeholder="Search players by name, team, or email"
+              />
+              <div className="max-h-56 space-y-2 overflow-auto rounded-md border border-border p-3">
+                {filteredPlayers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No players match your search.</p>
+                ) : (
+                  filteredPlayers.map((player) => {
+                    const checked = sendSelectedPlayerIds.has(player.id);
+                    return (
+                      <label key={player.id} className="flex cursor-pointer items-start gap-3 rounded-md p-2 hover:bg-muted/40">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) => toggleSendPlayer(player.id, value === true)}
+                        />
+                        <span className="text-sm">
+                          <span className="font-medium text-foreground">{player.first_name} {player.last_name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {player.team?.trim() || "Unassigned"}
+                            {player.email ? ` • ${player.email}` : " • No email"}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Recipients selected: {selectedPlayers.length}</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="send-message">Message (optional)</Label>
+              <Textarea
+                id="send-message"
+                value={sendMessage}
+                onChange={(e) => setSendMessage(e.target.value)}
+                placeholder="Add a short note for players"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendDialogOpen(false)} disabled={sendingShares}>Cancel</Button>
+            <Button onClick={handleSendToPlayers} disabled={sendingShares}>
+              <Send className="h-4 w-4" />
+              {sendingShares ? "Sending..." : "Send To Players"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editDialogOpen}

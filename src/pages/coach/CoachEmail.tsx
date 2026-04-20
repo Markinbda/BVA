@@ -34,6 +34,7 @@ const CoachEmail = () => {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [selectedTeams, setSelectedTeams] = useState<Set<string>>(new Set());
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set());
   const [manualEmails, setManualEmails] = useState("");
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [sending, setSending] = useState(false);
@@ -62,16 +63,53 @@ const CoachEmail = () => {
     });
   };
 
-  const teamEmails = Array.from(selectedTeams).flatMap(
-    (team) => (teamGroups[team] ?? []).map((p) => p.email).filter(Boolean) as string[]
-  );
+  const filteredPlayers = selectedTeams.size > 0
+    ? players.filter((p) => selectedTeams.has((p.team || "").trim() || "Unassigned"))
+    : players;
+
+  useEffect(() => {
+    const visiblePlayerIds = new Set(filteredPlayers.map((p) => p.id));
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => visiblePlayerIds.has(id)));
+      return next;
+    });
+  }, [selectedTeams, players]);
+
+  const togglePlayer = (playerId: string) => {
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      next.has(playerId) ? next.delete(playerId) : next.add(playerId);
+      return next;
+    });
+  };
+
+  const allVisiblePlayerIds = filteredPlayers.map((p) => p.id);
+  const allVisibleSelected =
+    allVisiblePlayerIds.length > 0 && allVisiblePlayerIds.every((id) => selectedPlayerIds.has(id));
+
+  const toggleAllVisiblePlayers = () => {
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        allVisiblePlayerIds.forEach((id) => next.delete(id));
+      } else {
+        allVisiblePlayerIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const selectedPlayerEmails = players
+    .filter((p) => selectedPlayerIds.has(p.id))
+    .map((p) => p.email)
+    .filter(Boolean) as string[];
 
   const manualList = manualEmails
     .split(/[\s,;]+/)
     .map((e) => e.trim())
     .filter((e) => e.includes("@"));
 
-  const allRecipients = Array.from(new Set([...teamEmails, ...manualList]));
+  const allRecipients = Array.from(new Set([...selectedPlayerEmails, ...manualList]));
 
   const handleAttach = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -148,6 +186,7 @@ const CoachEmail = () => {
         setSubject("");
         setBody("");
         setSelectedTeams(new Set());
+        setSelectedPlayerIds(new Set());
         setManualEmails("");
         setAttachments([]);
       }
@@ -190,6 +229,41 @@ const CoachEmail = () => {
                 </div>
               </div>
             )}
+
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <Label className="block">Select Players</Label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    onCheckedChange={toggleAllVisiblePlayers}
+                  />
+                  <span className="text-sm">All</span>
+                </label>
+              </div>
+
+              <div className="max-h-48 space-y-2 overflow-auto rounded-md border p-3">
+                {filteredPlayers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No players found for selected team(s).</p>
+                ) : (
+                  filteredPlayers.map((player) => (
+                    <label key={player.id} className="flex cursor-pointer items-start gap-2 rounded-md p-1 hover:bg-muted/40">
+                      <Checkbox
+                        checked={selectedPlayerIds.has(player.id)}
+                        onCheckedChange={() => togglePlayer(player.id)}
+                      />
+                      <span className="text-sm">
+                        <span className="font-medium">{player.first_name} {player.last_name}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {(player.team || "Unassigned").trim() || "Unassigned"}
+                          {player.email ? ` • ${player.email}` : " • No email"}
+                        </span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
 
             <div className="space-y-1">
               <Label>Additional / Override Recipients</Label>

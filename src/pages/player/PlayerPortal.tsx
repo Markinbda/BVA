@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
   Clock,
+  Download,
+  ExternalLink,
   FileText,
+  FolderOpen,
   Mic,
   Users,
   User,
@@ -73,6 +76,23 @@ interface VideoGroup {
   hasPersonal: boolean;
 }
 
+interface SharedDocument {
+  id: string;
+  file_name: string;
+  file_path: string;
+  description: string | null;
+  uploaded_at: string;
+  sent_at: string;
+}
+
+interface SharedDocumentSet {
+  id: string;
+  name: string;
+  description: string | null;
+  sent_at: string;
+  documents: SharedDocument[];
+}
+
 const fmtTime = (secs: number) => {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
@@ -80,6 +100,13 @@ const fmtTime = (secs: number) => {
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 };
+
+const formatDate = (value: string) =>
+  new Intl.DateTimeFormat("en-BM", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(value));
 
 const buildEmbedWithTime = (
   cv: { video_uid: string; video_provider: "cloudflare" | "youtube" },
@@ -101,13 +128,16 @@ const PlayerPortal = () => {
   const { toast } = useToast();
   const isMountedRef = useRef(true);
 
-  const [active, setActive] = useState<"team" | "library" | "mine">("team");
+  const [active, setActive] = useState<"team" | "library" | "mine" | "documents">("team");
   const [loading, setLoading] = useState(true);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [playing, setPlaying] = useState<Record<string, number>>({});
   const [videoGroups, setVideoGroups] = useState<Array<[string, VideoGroup]>>([]);
   const [playerRecords, setPlayerRecords] = useState<PlayerRecord[]>([]);
   const [teamStats, setTeamStats] = useState<TeamStat[]>([]);
+  const [sharedDocuments, setSharedDocuments] = useState<SharedDocument[]>([]);
+  const [sharedSets, setSharedSets] = useState<SharedDocumentSet[]>([]);
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
 
   const fetchPortal = useCallback(async () => {
     if (!user?.email || !isMountedRef.current) return;
@@ -135,6 +165,127 @@ const PlayerPortal = () => {
 
     const players: PlayerRecord[] = playersRes.data ?? [];
     setPlayerRecords(players);
+
+    const playerIds = players.map((player) => player.id);
+
+    if (playerIds.length > 0) {
+      const { data: rawDocShares, error: docSharesError } = await (supabase as any)
+        .from("coach_document_player_shares")
+        .select("id, player_id, document_id, set_id, sent_at, coach_documents(id, file_name, file_path, description, uploaded_at)")
+        .in("player_id", playerIds)
+        .order("sent_at", { ascending: false });
+
+      if (docSharesError) {
+        toast({ title: "Unable to load shared documents", description: docSharesError.message, variant: "destructive" });
+      } else {
+        const directDocMap = new Map<string, SharedDocument>();
+        const setShareSentAt = new Map<string, string>();
+
+        for (const share of rawDocShares ?? []) {
+          if (share.document_id && share.coach_documents) {
+            const current = directDocMap.get(share.document_id);
+            if (!current || new Date(share.sent_at).getTime() > new Date(current.sent_at).getTime()) {
+              directDocMap.set(share.document_id, {
+                id: share.coach_documents.id,
+                file_name: share.coach_documents.file_name,
+                file_path: share.coach_documents.file_path,
+                description: share.coach_documents.description,
+                uploaded_at: share.coach_documents.uploaded_at,
+                sent_at: share.sent_at,
+              });
+            }
+          }
+
+          if (share.set_id) {
+            const currentSent = setShareSentAt.get(share.set_id);
+            if (!currentSent || new Date(share.sent_at).getTime() > new Date(currentSent).getTime()) {
+              setShareSentAt.set(share.set_id, share.sent_at);
+            }
+          }
+        }
+
+        const setIds = Array.from(setShareSentAt.keys());
+        let setRows: Array<any> = [];
+        let setItems: Array<any> = [];
+
+        if (setIds.length > 0) {
+          const [{ data: setData, error: setsError }, { data: itemData, error: itemsError }] = await Promise.all([
+            (supabase as any)
+              .from("coach_document_sets")
+              .select("id, name, description")
+              .in("id", setIds),
+            (supabase as any)
+              .from("coach_document_set_items")
+              .select("set_id, document_id")
+              .in("set_id", setIds),
+          ]);
+
+          if (setsError) {
+            toast({ title: "Unable to load shared document sets", description: setsError.message, variant: "destructive" });
+          } else if (itemsError) {
+            toast({ title: "Unable to load shared set items", description: itemsError.message, variant: "destructive" });
+          } else {
+            setRows = setData ?? [];
+            setItems = itemData ?? [];
+          }
+        }
+
+        const setDocumentIds = Array.from(new Set(setItems.map((item) => item.document_id)));
+        const setDocMap = new Map<string, SharedDocument>();
+        if (setDocumentIds.length > 0) {
+          const { data: setDocs, error: setDocsError } = await (supabase as any)
+            .from("coach_documents")
+            .select("id, file_name, file_path, description, uploaded_at")
+            .in("id", setDocumentIds);
+
+          if (setDocsError) {
+            toast({ title: "Unable to load shared set files", description: setDocsError.message, variant: "destructive" });
+          } else {
+            for (const doc of setDocs ?? []) {
+              setDocMap.set(doc.id, {
+                id: doc.id,
+                file_name: doc.file_name,
+                file_path: doc.file_path,
+                description: doc.description,
+                uploaded_at: doc.uploaded_at,
+                sent_at: "",
+              });
+            }
+          }
+        }
+
+        const itemsBySet = new Map<string, SharedDocument[]>();
+        for (const item of setItems) {
+          const doc = setDocMap.get(item.document_id);
+          if (!doc) continue;
+          const sentAt = setShareSentAt.get(item.set_id) ?? doc.uploaded_at;
+          const docs = itemsBySet.get(item.set_id) ?? [];
+          docs.push({ ...doc, sent_at: sentAt });
+          itemsBySet.set(item.set_id, docs);
+        }
+
+        const mappedSets: SharedDocumentSet[] = setRows
+          .map((setRow) => ({
+            id: setRow.id,
+            name: setRow.name,
+            description: setRow.description,
+            sent_at: setShareSentAt.get(setRow.id) ?? new Date().toISOString(),
+            documents: itemsBySet.get(setRow.id) ?? [],
+          }))
+          .filter((setRow) => setRow.documents.length > 0)
+          .sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
+
+        const mappedDocs = Array.from(directDocMap.values()).sort(
+          (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+        );
+
+        setSharedDocuments(mappedDocs);
+        setSharedSets(mappedSets);
+      }
+    } else {
+      setSharedDocuments([]);
+      setSharedSets([]);
+    }
 
     const notes: NoteWithVideo[] = notesRes.data ?? [];
     const shares: SharedTokenVideo[] = sharesRes.data ?? [];
@@ -239,6 +390,42 @@ const PlayerPortal = () => {
     if (isMountedRef.current) setLoading(false);
   }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getSignedUrl = async (filePath: string) => {
+    const { data, error } = await supabase.storage
+      .from("coach-documents")
+      .createSignedUrl(filePath, 60 * 5);
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? "Could not generate signed URL");
+    }
+    return data.signedUrl;
+  };
+
+  const handleOpenDocument = async (doc: SharedDocument) => {
+    setOpeningDocumentId(doc.id);
+    try {
+      const signedUrl = await getSignedUrl(doc.file_path);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error: any) {
+      toast({ title: "Unable to open file", description: String(error?.message ?? error), variant: "destructive" });
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
+  const handleDownloadDocument = async (doc: SharedDocument) => {
+    try {
+      const signedUrl = await getSignedUrl(doc.file_path);
+      const anchor = document.createElement("a");
+      anchor.href = signedUrl;
+      anchor.download = doc.file_name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch (error: any) {
+      toast({ title: "Unable to download file", description: String(error?.message ?? error), variant: "destructive" });
+    }
+  };
+
   useEffect(() => {
     isMountedRef.current = true;
     if (!user) {
@@ -261,13 +448,14 @@ const PlayerPortal = () => {
       <div className="container mx-auto px-4 py-8 max-w-5xl space-y-5">
         <div>
           <h1 className="text-2xl font-bold">Player Portal</h1>
-          <p className="text-sm text-muted-foreground">Team details, stats and your shared coaching videos.</p>
+          <p className="text-sm text-muted-foreground">Team details, stats, shared coaching videos and documents.</p>
         </div>
 
         <div className="flex gap-2 flex-wrap">
           <Button variant={active === "team" ? "default" : "outline"} onClick={() => setActive("team")}>Team & Stats</Button>
           <Button variant={active === "library" ? "default" : "outline"} onClick={() => setActive("library")}>Video Library</Button>
           <Button variant={active === "mine" ? "default" : "outline"} onClick={() => setActive("mine")}>My Videos</Button>
+          <Button variant={active === "documents" ? "default" : "outline"} onClick={() => setActive("documents")}>Document Library</Button>
         </div>
 
         {loading ? (
@@ -305,6 +493,80 @@ const PlayerPortal = () => {
                           <span>Losses: <strong>{s.losses}</strong></span>
                           <span>Points: <strong>{s.points_awarded}</strong></span>
                           <span>Diff: <strong>{s.point_diff}</strong></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        ) : active === "documents" ? (
+          <div className="space-y-6">
+            <Card>
+              <CardContent className="pt-4">
+                <h2 className="font-semibold mb-2 flex items-center gap-2"><FolderOpen className="h-4 w-4" /> Shared Document Sets</h2>
+                {sharedSets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No document sets have been shared with you yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {sharedSets.map((set) => (
+                      <div key={set.id} className="rounded-md border p-3 space-y-3">
+                        <div>
+                          <p className="font-medium">{set.name}</p>
+                          {set.description && <p className="text-sm text-muted-foreground">{set.description}</p>}
+                          <p className="text-xs text-muted-foreground mt-1">Shared {formatDate(set.sent_at)} • {set.documents.length} document{set.documents.length === 1 ? "" : "s"}</p>
+                        </div>
+                        <div className="space-y-2">
+                          {set.documents.map((doc) => (
+                            <div key={`${set.id}-${doc.id}`} className="rounded-md border px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-medium">{doc.file_name}</p>
+                                <p className="text-xs text-muted-foreground">{doc.description ?? "No description"}</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => handleOpenDocument(doc)} disabled={openingDocumentId === doc.id}>
+                                  <ExternalLink className="h-4 w-4" />
+                                  {openingDocumentId === doc.id ? "Opening..." : "Open"}
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => handleDownloadDocument(doc)}>
+                                  <Download className="h-4 w-4" />
+                                  Download
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <h2 className="font-semibold mb-2 flex items-center gap-2"><FileText className="h-4 w-4" /> Shared Documents</h2>
+                {sharedDocuments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No individual documents have been shared with you yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sharedDocuments.map((doc) => (
+                      <div key={doc.id} className="rounded-md border px-3 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{doc.file_name}</p>
+                          <p className="text-xs text-muted-foreground">{doc.description ?? "No description"}</p>
+                          <p className="text-xs text-muted-foreground mt-1">Shared {formatDate(doc.sent_at)}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => handleOpenDocument(doc)} disabled={openingDocumentId === doc.id}>
+                            <ExternalLink className="h-4 w-4" />
+                            {openingDocumentId === doc.id ? "Opening..." : "Open"}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleDownloadDocument(doc)}>
+                            <Download className="h-4 w-4" />
+                            Download
+                          </Button>
                         </div>
                       </div>
                     ))}
