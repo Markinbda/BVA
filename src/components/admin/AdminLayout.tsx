@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 const navItems = [
+  { path: "/coach", label: "Coach Portal", icon: ClipboardList, permission: "manage_coaches" },
   { path: "/admin", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
   { path: "/admin/users", label: "System Users", icon: Users, permission: "manage_users" },
   { path: "/admin/seasons", label: "Season History", icon: Medal, permission: "manage_leagues" },
@@ -28,7 +29,6 @@ const navItems = [
   { path: "/admin/teams", label: "Team Coaches", icon: UserCog, permission: "manage_coaches" },
   { path: "/admin/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { path: "/admin/import", label: "WP Import", icon: Upload, permission: "manage_import" },
-  { path: "/coach", label: "Coach Portal", icon: ClipboardList, permission: "manage_coaches" },
 ];
 
 const AdminLayout = ({ children }: { children: React.ReactNode }) => {
