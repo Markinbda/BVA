@@ -108,7 +108,10 @@ const CoachPlayers = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [teamFilter, setTeamFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
@@ -283,6 +286,17 @@ const CoachPlayers = () => {
     setDialogOpen(true);
   };
 
+  const openDetails = (player: Player) => {
+    setSelectedPlayer(player);
+    setDetailsOpen(true);
+  };
+
+  const openEditFromDetails = () => {
+    if (!selectedPlayer) return;
+    setDetailsOpen(false);
+    openEdit(selectedPlayer);
+  };
+
   const handleSave = async () => {
     if (!user) return;
     if (!form.first_name.trim() || !form.last_name.trim()) {
@@ -338,6 +352,15 @@ const CoachPlayers = () => {
 
   const filtered = players.filter((p) => {
     const q = search.toLowerCase();
+    const matchesTeam =
+      teamFilter === "all"
+        ? true
+        : teamFilter === "unassigned"
+          ? !p.team_id
+          : p.team_id === teamFilter;
+
+    if (!matchesTeam) return false;
+
     return (
       p.first_name.toLowerCase().includes(q) ||
       p.last_name.toLowerCase().includes(q) ||
@@ -359,14 +382,32 @@ const CoachPlayers = () => {
           </Button>
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search players..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search players..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {teams.length > 1 && (
+            <div className="w-full max-w-xs">
+              <Select value={teamFilter} onValueChange={setTeamFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by team" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  {teams.map((team) => (
+                    <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                  ))}
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -380,49 +421,91 @@ const CoachPlayers = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((player) => (
-              <Card key={player.id}>
-                <CardContent className="py-4 flex items-start justify-between gap-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 flex-1 text-sm">
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {player.first_name} {player.last_name}
-                      </p>
-                      <p className="text-muted-foreground">{player.team || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Position</p>
-                      <p>{player.volleyball_position || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Age / DOB</p>
-                      <p>{player.age ?? "—"}{player.date_of_birth ? ` · ${player.date_of_birth}` : ""}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Email</p>
-                      <p className="truncate">{player.email || "—"}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(player)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(player.id, `${player.first_name} ${player.last_name}`)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+              <Card
+                key={player.id}
+                className="cursor-pointer hover:shadow-md transition-shadow"
+                onClick={() => openDetails(player)}
+              >
+                <CardContent className="py-3 space-y-1.5 text-sm">
+                  <p className="font-semibold text-foreground truncate">
+                    {player.first_name} {player.last_name}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{player.team || "Unassigned"}</p>
+                  <p className="text-xs text-muted-foreground">{player.volleyball_position || "No position set"}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {player.age ?? "—"}{player.date_of_birth ? ` · ${player.date_of_birth}` : ""}
+                  </p>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Player Details</DialogTitle>
+          </DialogHeader>
+
+          {selectedPlayer && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-base font-semibold text-foreground">
+                  {selectedPlayer.first_name} {selectedPlayer.last_name}
+                </p>
+                <p className="text-muted-foreground">{selectedPlayer.team || "Unassigned"}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Position</p>
+                  <p>{selectedPlayer.volleyball_position || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Age / DOB</p>
+                  <p>{selectedPlayer.age ?? "—"}{selectedPlayer.date_of_birth ? ` · ${selectedPlayer.date_of_birth}` : ""}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  <p className="break-all">{selectedPlayer.email || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Height / Weight</p>
+                  <p>{selectedPlayer.height || "—"}{selectedPlayer.weight ? ` · ${selectedPlayer.weight}` : ""}</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs text-muted-foreground">Notes</p>
+                <p>{selectedPlayer.notes || "No notes"}</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => {
+                if (!selectedPlayer) return;
+                handleDelete(selectedPlayer.id, `${selectedPlayer.first_name} ${selectedPlayer.last_name}`);
+                setDetailsOpen(false);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove
+            </Button>
+            <Button variant="outline" onClick={() => setDetailsOpen(false)}>Close</Button>
+            <Button onClick={openEditFromDetails}>
+              <Pencil className="h-4 w-4" />
+              Edit Player
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
