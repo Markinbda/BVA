@@ -189,11 +189,26 @@ const MemberRegistration = () => {
       registered_at: new Date().toISOString(),
     };
 
-    // Save to profiles table as JSON supplement (or a dedicated member_profiles table if available)
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: form.fullName } as any)
-      .eq("user_id", user?.id);
+      .upsert(
+        {
+          user_id: user?.id,
+          display_name: form.fullName,
+          date_of_birth: form.dob,
+          phone: form.phone,
+          address: form.address,
+          roles: form.roles,
+          volleyball_formats: form.formats,
+          team_formats: form.teamFormats,
+          medical_notes: form.medicalNotes || null,
+          emergency_contact_name: form.emergencyName || null,
+          emergency_contact_phone: form.emergencyPhone || null,
+          experience_level: form.experienceLevel || null,
+          photo_consent: form.photoConsent,
+        } as any,
+        { onConflict: "user_id" }
+      );
 
     // Also try to upsert into member_registrations if the table exists
     await supabase.from("member_registrations" as any).upsert(payload, { onConflict: "user_id" });

@@ -120,6 +120,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (isMountedRef.current) setIsPlayer((data?.length ?? 0) > 0);
   };
 
+  const ensureProfileInitialized = async (sessionUser: User) => {
+    const meta = (sessionUser.user_metadata ?? {}) as Record<string, any>;
+    const displayName =
+      (typeof meta.display_name === "string" && meta.display_name.trim()) ||
+      (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+      (typeof meta.name === "string" && meta.name.trim()) ||
+      sessionUser.email ||
+      null;
+
+    await supabase.from("profiles").upsert(
+      {
+        user_id: sessionUser.id,
+        display_name: displayName,
+      } as any,
+      { onConflict: "user_id" }
+    );
+  };
+
   const syncEmailMatchedRoles = async (userId: string, email?: string | null) => {
     if (!email) return;
 
@@ -185,6 +203,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         applyOwnerFallback(session?.user?.email);
         
         if (session?.user && sessionChanged) {
+          await ensureProfileInitialized(session.user);
           await runPermissionChecks(session.user.id, session.user.email);
         }
 
@@ -200,6 +219,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(session?.user ?? null);
         applyOwnerFallback(session?.user?.email);
         if (session?.user) {
+          await ensureProfileInitialized(session.user);
           await runPermissionChecks(session.user.id, session.user.email);
         }
       } finally {

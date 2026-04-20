@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   User, Mail, Phone, MapPin, Calendar, Edit2, Plus, Trash2,
-  Camera, Trophy, Users, Shield, ChevronRight, Lock, Loader2, Heart, ClipboardList,
+  Camera, Trophy, Users, Shield, ChevronRight, Lock, Loader2, Heart, ClipboardList, Hash,
 } from "lucide-react";
 import SocialTab from "@/components/SocialTab";
 
@@ -29,6 +29,7 @@ import SocialTab from "@/components/SocialTab";
 interface Profile {
   user_id: string;
   display_name: string | null;
+  membership_number?: string | null;
   avatar_url: string | null;
   phone: string | null;
   date_of_birth: string | null;
@@ -367,8 +368,14 @@ const ProfileDashboard = () => {
 
   const getAge = (dob: string | null) => {
     if (!dob) return null;
-    const diff = Date.now() - new Date(dob).getTime();
-    return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25));
+    const [year, month, day] = dob.split("-").map((part) => Number(part));
+    if (!year || !month || !day) return null;
+    const now = new Date();
+    let age = now.getFullYear() - year;
+    const monthDelta = now.getMonth() + 1 - month;
+    const hasNotHadBirthday = monthDelta < 0 || (monthDelta === 0 && now.getDate() < day);
+    if (hasNotHadBirthday) age -= 1;
+    return age;
   };
 
   const initials = (name: string | null) =>
@@ -388,6 +395,15 @@ const ProfileDashboard = () => {
     (acc[row.player_id] = acc[row.player_id] || []).push(row);
     return acc;
   }, {});
+
+  const hasLinkedTeamPlayer = linkedPlayers.some((player) => !!player.team?.trim());
+
+  const formatDateOnly = (value: string | null) => {
+    if (!value) return null;
+    const [year, month, day] = value.split("-").map((part) => Number(part));
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString();
+  };
 
   const totalGolds =
     seasons.filter((s) => s.placement === 1).length +
@@ -503,13 +519,15 @@ const ProfileDashboard = () => {
                 )}
               </TabsTrigger>
             </TabsList>
-            <button
-              onClick={() => navigate("/my-notes")}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors shrink-0"
-            >
-              <ClipboardList className="h-4 w-4 text-primary" />
-              My Coach Notes
-            </button>
+            {hasLinkedTeamPlayer && (
+              <button
+                onClick={() => navigate("/my-notes")}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors shrink-0"
+              >
+                <ClipboardList className="h-4 w-4 text-primary" />
+                My Coach Notes
+              </button>
+            )}
           </div>
 
           {/* ─────────────────────────────────── Profile tab ── */}
@@ -524,9 +542,10 @@ const ProfileDashboard = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
+                  <InfoRow icon={<Hash className="h-4 w-4" />} label="Membership #" value={profile?.membership_number ?? null} />
                   <InfoRow icon={<User className="h-4 w-4" />} label="Full Name" value={profile?.display_name} />
                   <InfoRow icon={<Calendar className="h-4 w-4" />} label="Date of Birth"
-                    value={profile?.date_of_birth ? `${new Date(profile.date_of_birth).toLocaleDateString()} (age ${getAge(profile.date_of_birth)})` : null} />
+                    value={profile?.date_of_birth ? `${formatDateOnly(profile.date_of_birth)} (age ${getAge(profile.date_of_birth)})` : null} />
                   <InfoRow icon={<Mail className="h-4 w-4" />} label="Email" value={user?.email} />
                   <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={profile?.phone} />
                   <InfoRow icon={<MapPin className="h-4 w-4" />} label="Address" value={profile?.address} />
@@ -805,7 +824,7 @@ const ProfileDashboard = () => {
                                 )}
 
                                 {/* Coach Notes */}
-                                {s.coach_notes && (
+                                {hasLinkedTeamPlayer && s.coach_notes && (
                                   <div>
                                     <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Coach Notes</p>
                                     <p className="text-sm text-muted-foreground italic">"{s.coach_notes}"</p>
@@ -829,7 +848,7 @@ const ProfileDashboard = () => {
                     </div>
                   ))}
 
-                {linkedPlayers.length > 0 && (
+                {hasLinkedTeamPlayer && (
                   <div>
                     <div className="mb-3 flex items-center gap-3">
                       <h3 className="font-heading text-lg font-bold text-primary">Coach-Recorded Past Events</h3>
