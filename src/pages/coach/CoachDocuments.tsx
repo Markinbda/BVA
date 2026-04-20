@@ -106,8 +106,11 @@ const CoachDocuments = () => {
   const [setName, setSetName] = useState("");
   const [setGroupDescription, setSetGroupDescription] = useState("");
   const [setSelectedIds, setSetSelectedIds] = useState<Set<string>>(new Set());
+  const [setPendingFiles, setSetPendingFiles] = useState<File[]>([]);
+  const [setDraggingFiles, setSetDraggingFiles] = useState(false);
   const [setSaving, setSetSaving] = useState(false);
   const [reviewSet, setReviewSet] = useState<DocumentSet | null>(null);
+  const setFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [players, setPlayers] = useState<CoachPlayer[]>([]);
   const [shareSelectedDocumentIds, setShareSelectedDocumentIds] = useState<Set<string>>(new Set());
@@ -129,6 +132,8 @@ const CoachDocuments = () => {
     setSetName("");
     setSetGroupDescription("");
     setSetSelectedIds(new Set());
+    setSetPendingFiles([]);
+    setSetDraggingFiles(false);
   };
 
   const resetEditForm = () => {
@@ -713,19 +718,124 @@ const CoachDocuments = () => {
     });
   };
 
+  const setFileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
+
+  const addSetFiles = (incoming: FileList | File[] | null) => {
+    if (!incoming || incoming.length === 0) return;
+    const nextFiles = Array.from(incoming);
+
+    const oversized = nextFiles.find((file) => file.size > MAX_DOC_SIZE);
+    if (oversized) {
+      toast({
+        title: "File too large",
+        description: `${oversized.name} exceeds the 25MB limit.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSetPendingFiles((prev) => {
+      const seen = new Set(prev.map(setFileKey));
+      const deduped = nextFiles.filter((file) => !seen.has(setFileKey(file)));
+      return [...prev, ...deduped];
+    });
+  };
+
+  const openSetFilePicker = () => {
+    setFileInputRef.current?.click();
+  };
+
+  const handleSetDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setSetDraggingFiles(true);
+  };
+
+  const handleSetDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setSetDraggingFiles(false);
+  };
+
+  const handleSetDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setSetDraggingFiles(false);
+    addSetFiles(e.dataTransfer.files);
+  };
+
+  const removeSetPendingFile = (fileToRemove: File) => {
+    const key = setFileKey(fileToRemove);
+    setSetPendingFiles((prev) => prev.filter((file) => setFileKey(file) !== key));
+  };
+
   const createDocumentSet = async () => {
     if (!user) return;
     if (!setName.trim()) {
       toast({ title: "Set name is required", variant: "destructive" });
       return;
     }
-    if (setSelectedIds.size < 2) {
+    if (setSelectedIds.size + setPendingFiles.length < 2) {
       toast({ title: "Select at least 2 documents", variant: "destructive" });
       return;
     }
 
     setSetSaving(true);
     try {
+      let selectedDocumentIds = Array.from(setSelectedIds);
+
+      if (setPendingFiles.length > 0) {
+        const uploadedPaths: string[] = [];
+        const rowsToInsert: Array<{
+          coach_id: string;
+          file_name: string;
+          file_path: string;
+          file_size: number;
+          mime_type: string | null;
+          description: string | null;
+          share_with_players: boolean;
+          share_with_all_coaches: boolean;
+        }> = [];
+
+        for (const file of setPendingFiles) {
+          const storagePath = `${user.id}/${Date.now()}-${sanitizeFileName(file.name)}`;
+          const { error: uploadError } = await supabase.storage
+            .from("coach-documents")
+            .upload(storagePath, file, { upsert: false });
+
+          if (uploadError) {
+            if (uploadedPaths.length > 0) {
+              await supabase.storage.from("coach-documents").remove(uploadedPaths);
+            }
+            throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+          }
+
+          uploadedPaths.push(storagePath);
+          rowsToInsert.push({
+            coach_id: user.id,
+            file_name: file.name,
+            file_path: storagePath,
+            file_size: file.size,
+            mime_type: file.type || null,
+            description: null,
+            share_with_players: false,
+            share_with_all_coaches: false,
+          });
+        }
+
+        const { data: insertedDocs, error: insertDocsError } = await (supabase as any)
+          .from("coach_documents")
+          .insert(rowsToInsert)
+          .select("id");
+
+        if (insertDocsError) {
+          await supabase.storage.from("coach-documents").remove(uploadedPaths);
+          throw new Error(insertDocsError.message);
+        }
+
+        selectedDocumentIds = [
+          ...selectedDocumentIds,
+          ...((insertedDocs ?? []).map((doc: { id: string }) => doc.id)),
+        ];
+      }
+
       const { data: setRow, error: setError } = await (supabase as any)
         .from("coach_document_sets")
         .insert({
@@ -737,7 +847,7 @@ const CoachDocuments = () => {
         .single();
       if (setError) throw new Error(setError.message);
 
-      const items = Array.from(setSelectedIds).map((documentId) => ({
+      const items = selectedDocumentIds.map((documentId) => ({
         set_id: setRow.id,
         document_id: documentId,
       }));
@@ -746,7 +856,13 @@ const CoachDocuments = () => {
         .insert(items);
       if (itemsError) throw new Error(itemsError.message);
 
-      toast({ title: "Document set created" });
+      toast({
+        title: "Document set created",
+        description:
+          setPendingFiles.length > 0
+            ? `${setPendingFiles.length} new document${setPendingFiles.length === 1 ? "" : "s"} added to your library.`
+            : undefined,
+      });
       setSetDialogOpen(false);
       resetSetForm();
       loadDocuments();
@@ -1419,6 +1535,51 @@ const CoachDocuments = () => {
               <Textarea id="set-description" value={setGroupDescription} onChange={(e) => setSetGroupDescription(e.target.value)} placeholder="What is this set used for?" />
             </div>
             <div className="space-y-2">
+              <Label>Upload new documents (optional)</Label>
+              <div
+                onDragOver={handleSetDragOver}
+                onDragLeave={handleSetDragLeave}
+                onDrop={handleSetDrop}
+                onClick={openSetFilePicker}
+                className={`cursor-pointer rounded-md border-2 border-dashed p-4 text-center transition-colors ${
+                  setDraggingFiles ? "border-primary bg-primary/5" : "border-border"
+                }`}
+              >
+                <p className="text-sm text-muted-foreground">
+                  Drag and drop document files here, or click to choose files
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Uploaded files are added to Document Library and included in this set.
+                </p>
+              </div>
+              <input
+                ref={setFileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => addSetFiles(e.target.files)}
+              />
+              {setPendingFiles.length > 0 && (
+                <div className="max-h-32 space-y-1 overflow-auto rounded-md border border-border p-2">
+                  {setPendingFiles.map((file) => (
+                    <div key={setFileKey(file)} className="flex items-center justify-between rounded-md px-2 py-1 text-sm">
+                      <span className="truncate pr-2">{file.name} ({formatBytes(file.size)})</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeSetPendingFile(file)}
+                        disabled={setSaving}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">New files queued: {setPendingFiles.length}</p>
+            </div>
+            <div className="space-y-2">
               <Label>Documents</Label>
               <div className="max-h-64 space-y-2 overflow-auto rounded-md border border-border p-3">
                 {filteredMine.length === 0 ? (
@@ -1441,7 +1602,7 @@ const CoachDocuments = () => {
                   })
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">Selected: {setSelectedIds.size}</p>
+              <p className="text-xs text-muted-foreground">Selected: {setSelectedIds.size + setPendingFiles.length}</p>
             </div>
           </div>
 
