@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import CoachLayout from "@/components/coach/CoachLayout";
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Upload, FileText, Trash2, ExternalLink, Users, User } from "lucide-react";
 
@@ -58,6 +59,8 @@ const CoachDocuments = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"mine" | "shared">("mine");
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -67,6 +70,7 @@ const CoachDocuments = () => {
   const [uploading, setUploading] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const canManageAllDocuments = isAdmin || hasPermission("manage_coach_documents");
 
@@ -152,6 +156,27 @@ const CoachDocuments = () => {
     }
   };
 
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFile(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFile(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingFile(false);
+    const file = e.dataTransfer.files?.[0] ?? null;
+    handleFileChange(file);
+  };
+
   const handleUpload = async () => {
     if (!user || !selectedFile) {
       toast({ title: "Select a file first", variant: "destructive" });
@@ -206,6 +231,7 @@ const CoachDocuments = () => {
 
     toast({ title: "Document uploaded" });
     resetUploadForm();
+    setUploadDialogOpen(false);
     setUploading(false);
     loadDocuments();
   };
@@ -350,7 +376,7 @@ const CoachDocuments = () => {
     <CoachLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Document Repository</h1>
+          <h1 className="text-2xl font-bold text-foreground">Document Library</h1>
           <p className="text-muted-foreground mt-1">
             Upload private files, share with players, and publish documents to all coaches.
           </p>
@@ -358,70 +384,123 @@ const CoachDocuments = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Upload Document</CardTitle>
+            <CardTitle>Upload</CardTitle>
             <CardDescription>
-              Coaches can upload personal files. Use sharing options to publish to players or all coaches.
+              Open the upload modal to add documents with sharing options.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="document-file">File</Label>
-              <Input
-                id="document-file"
-                type="file"
-                onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
-              />
-              {selectedFile && (
-                <p className="text-xs text-muted-foreground">
-                  Selected: {selectedFile.name} ({formatBytes(selectedFile.size)})
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="document-name">File name</Label>
-              <Input
-                id="document-name"
-                value={fileName}
-                onChange={(e) => setFileName(e.target.value)}
-                placeholder="Enter a display name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="document-description">Short description (optional)</Label>
-              <Textarea
-                id="document-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="What is this file for?"
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Share with players</p>
-                  <p className="text-xs text-muted-foreground">Makes this document visible in player-facing views.</p>
-                </div>
-                <Switch checked={shareWithPlayers} onCheckedChange={setShareWithPlayers} />
-              </div>
-
-              <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Share with all coaches</p>
-                  <p className="text-xs text-muted-foreground">Shows this file in the shared coach documents tab.</p>
-                </div>
-                <Switch checked={shareWithAllCoaches} onCheckedChange={setShareWithAllCoaches} />
-              </div>
-            </div>
-
-            <Button onClick={handleUpload} disabled={!selectedFile || uploading}>
+          <CardContent>
+            <Button
+              onClick={() => setUploadDialogOpen(true)}
+              disabled={uploading}
+            >
               <Upload className="h-4 w-4" />
-              {uploading ? "Uploading..." : "Upload Document"}
+              Upload Document
             </Button>
           </CardContent>
         </Card>
+
+        <Dialog
+          open={uploadDialogOpen}
+          onOpenChange={(open) => {
+            setUploadDialogOpen(open);
+            if (!open && !uploading) {
+              resetUploadForm();
+              setIsDraggingFile(false);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Upload Document</DialogTitle>
+              <DialogDescription>
+                Coaches can upload personal files. Use sharing options to publish to players or all coaches.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>File</Label>
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={openFilePicker}
+                  className={`cursor-pointer rounded-md border-2 border-dashed p-5 text-center transition-colors ${
+                    isDraggingFile ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <p className="text-sm text-muted-foreground">
+                    Drag and drop a file here, or click to choose a file
+                  </p>
+                  {selectedFile && (
+                    <p className="mt-2 text-sm font-medium text-foreground">
+                      Selected: {selectedFile.name} ({formatBytes(selectedFile.size)})
+                    </p>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="document-name">File name</Label>
+                <Input
+                  id="document-name"
+                  value={fileName}
+                  onChange={(e) => setFileName(e.target.value)}
+                  placeholder="Enter a display name"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="document-description">Short description (optional)</Label>
+                <Textarea
+                  id="document-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What is this file for?"
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">Share with players</p>
+                    <p className="text-xs text-muted-foreground">Makes this document visible in player-facing views.</p>
+                  </div>
+                  <Switch checked={shareWithPlayers} onCheckedChange={setShareWithPlayers} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-md border border-border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">Share with all coaches</p>
+                    <p className="text-xs text-muted-foreground">Shows this file in the shared coach documents tab.</p>
+                  </div>
+                  <Switch checked={shareWithAllCoaches} onCheckedChange={setShareWithAllCoaches} />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setUploadDialogOpen(false)}
+                disabled={uploading}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleUpload} disabled={!selectedFile || uploading}>
+                <Upload className="h-4 w-4" />
+                {uploading ? "Uploading..." : "Upload Document"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Card>
           <CardContent className="py-4">

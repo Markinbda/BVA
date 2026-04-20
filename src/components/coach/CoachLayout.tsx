@@ -24,7 +24,7 @@ const BASE_NAV = [
   { path: "/coach/players", label: "Players", icon: Users },
   { path: "/coach/drills", label: "Drill Library", icon: Dumbbell },
   { path: "/coach/practice-plans", label: "Practice Plans", icon: CalendarRange },
-  { path: "/coach/documents", label: "Document Repository", icon: FolderOpen },
+  { path: "/coach/documents", label: "Document Library", icon: FolderOpen },
   { path: "/coach/videos", label: "Video Library", icon: Video },
   { path: "/coach/live", label: "Live Streaming", icon: Radio },
   { path: "/coach/email", label: "Send Email", icon: Mail },
@@ -50,7 +50,7 @@ const CoachLayout = ({ children }: { children: React.ReactNode }) => {
   }, [user, isAdmin]);
 
   const navItems = showTeams
-    ? [BASE_NAV[0], BASE_NAV[1], TEAMS_ITEM, ...BASE_NAV.slice(2)]
+    ? [...BASE_NAV.slice(0, 7), TEAMS_ITEM, ...BASE_NAV.slice(7)]
     : BASE_NAV;
 
   return (

@@ -215,7 +215,7 @@ const SocialTab = ({ pendingCount, onPendingChange }: {
           <h3 className="font-heading text-lg font-bold uppercase">Follow Requests</h3>
           <Link to="/players">
             <Button size="sm" variant="outline" className="gap-1.5">
-              <Search className="h-3.5 w-3.5" /> Find Players
+              <Search className="h-3.5 w-3.5" /> Find Member
             </Button>
           </Link>
         </div>
@@ -275,7 +275,7 @@ const SocialTab = ({ pendingCount, onPendingChange }: {
           </div>
           <Link to="/players">
             <Button size="sm" variant="outline" className="gap-1.5">
-              <Search className="h-3.5 w-3.5" /> Find Players
+              <Search className="h-3.5 w-3.5" /> Find Member
             </Button>
           </Link>
         </div>
