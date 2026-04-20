@@ -41,11 +41,23 @@ const CoachEmail = () => {
 
   useEffect(() => {
     if (!user) return;
-    (supabase as any)
-      .from("coach_players")
-      .select("id, first_name, last_name, team, email")
-      .eq("coach_id", user.id)
-      .then(({ data }: { data: Player[] }) => setPlayers(data ?? []));
+    const loadPlayers = async () => {
+      const [ownPlayersRes, assignedPlayersRes] = await Promise.all([
+        (supabase as any)
+          .from("coach_players")
+          .select("id, first_name, last_name, team, email")
+          .eq("coach_id", user.id),
+        (supabase as any).rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
+      ]);
+
+      const ownPlayers: Player[] = ownPlayersRes.data ?? [];
+      const assignedPlayers: Player[] = assignedPlayersRes.data ?? [];
+      const seen = new Set(ownPlayers.map((player) => player.id));
+      const merged = [...ownPlayers, ...assignedPlayers.filter((player) => !seen.has(player.id))];
+      setPlayers(merged);
+    };
+
+    loadPlayers();
   }, [user]);
 
   // Group players by team

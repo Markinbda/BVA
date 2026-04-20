@@ -30,15 +30,27 @@ const CoachDashboard = () => {
     if (!user) return;
 
     const load = async () => {
-      const [playersRes, teamsRes, emailsRes, drillsRes, plansRes, profileRes, favoritesRes] = await Promise.all([
-        (supabase as any).from("coach_players").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
-        (supabase as any).from("coach_teams").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
+      const [ownPlayersRes, ownTeamsRes, assignedPlayersRes, assignedTeamsRes, emailsRes, drillsRes, plansRes, profileRes, favoritesRes] = await Promise.all([
+        (supabase as any).from("coach_players").select("id").eq("coach_id", user.id),
+        (supabase as any).from("coach_teams").select("id").eq("coach_id", user.id),
+        (supabase as any).rpc("get_players_for_assigned_teams", { p_user_id: user.id }),
+        (supabase as any).rpc("get_assigned_teams_for_user", { p_user_id: user.id }),
         (supabase as any).from("coach_email_history").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_drills").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("coach_practice_plans").select("id", { count: "exact", head: true }).eq("coach_id", user.id),
         (supabase as any).from("profiles").select("display_name").eq("user_id", user.id).single(),
         (supabase as any).from("coach_favorite_drills").select("drill_id").eq("coach_id", user.id).limit(8),
       ]);
+
+      const ownPlayerIds = new Set<string>((ownPlayersRes.data ?? []).map((row: any) => row.id));
+      for (const row of assignedPlayersRes.data ?? []) {
+        if (row?.id) ownPlayerIds.add(row.id);
+      }
+
+      const ownTeamIds = new Set<string>((ownTeamsRes.data ?? []).map((row: any) => row.id));
+      for (const row of assignedTeamsRes.data ?? []) {
+        if (row?.id) ownTeamIds.add(row.id);
+      }
 
       let favoriteRows: FavoriteDrill[] = [];
       if (!favoritesRes.error) {
@@ -56,8 +68,8 @@ const CoachDashboard = () => {
       }
 
       setStats({
-        players: playersRes.count ?? 0,
-        teams: teamsRes.count ?? 0,
+        players: ownPlayerIds.size,
+        teams: ownTeamIds.size,
         emails: emailsRes.count ?? 0,
         drills: drillsRes.count ?? 0,
         plans: plansRes.count ?? 0,
