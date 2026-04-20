@@ -104,7 +104,7 @@ const CoachDocuments = () => {
 
   const [setDialogOpen, setSetDialogOpen] = useState(false);
   const [setName, setSetName] = useState("");
-  const [setDescription, setSetDescription] = useState("");
+  const [setGroupDescription, setSetGroupDescription] = useState("");
   const [setSelectedIds, setSetSelectedIds] = useState<Set<string>>(new Set());
   const [setSaving, setSetSaving] = useState(false);
   const [reviewSet, setReviewSet] = useState<DocumentSet | null>(null);
@@ -127,7 +127,7 @@ const CoachDocuments = () => {
 
   const resetSetForm = () => {
     setSetName("");
-    setSetDescription("");
+    setSetGroupDescription("");
     setSetSelectedIds(new Set());
   };
 
@@ -731,7 +731,7 @@ const CoachDocuments = () => {
         .insert({
           coach_id: user.id,
           name: setName.trim(),
-          description: setDescription.trim() || null,
+          description: setGroupDescription.trim() || null,
         })
         .select("id")
         .single();
@@ -1416,7 +1416,7 @@ const CoachDocuments = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="set-description">Description (optional)</Label>
-              <Textarea id="set-description" value={setDescription} onChange={(e) => setSetDescription(e.target.value)} placeholder="What is this set used for?" />
+              <Textarea id="set-description" value={setGroupDescription} onChange={(e) => setSetGroupDescription(e.target.value)} placeholder="What is this set used for?" />
             </div>
             <div className="space-y-2">
               <Label>Documents</Label>
